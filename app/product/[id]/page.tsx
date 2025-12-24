@@ -4,21 +4,56 @@ import Link from 'next/link'
 import { ArrowLeft, Tag } from 'lucide-react'
 import AddToCartButton from '@/components/AddToCartButton'
 import { notFound } from 'next/navigation'
+import { Metadata } from 'next'
 
-// 1. UPDATE THE TYPE DEFINITION
-// Dati: { params: { id: string } }
-// Ngayon: { params: Promise<{ id: string }> }
+interface Props {
+    params: Promise<{ id: string }>
+  }
+  
+  // 1. GENERATE METADATA FUNCTION
+  export async function generateMetadata({ params }: Props): Promise<Metadata> {
+    // Await params first (Next.js 15 requirement)
+    const { id } = await params
+  
+    // Fetch product data
+    const { data: product } = await supabase
+      .from('products')
+      .select('*')
+      .eq('id', id)
+      .single()
+  
+    if (!product) {
+      return {
+        title: 'Product Not Found',
+      }
+    }
+  
+    return {
+      title: product.name, // Browser Tab Title
+      description: product.description,
+      openGraph: {
+        title: product.name,
+        description: product.description,
+        images: [
+          {
+            url: product.image_url, // Ito ang lalabas sa FB/Messenger Preview
+            width: 800,
+            height: 600,
+            alt: product.name,
+          },
+        ],
+      },
+    }
+  }
+
 export default async function ProductPage({ params }: { params: Promise<{ id: string }> }) {
   
-  // 2. AWAIT THE PARAMS
-  // Kailangan i-unwrap muna bago gamitin
   const { id } = await params
 
-  // 3. Use the 'id' variable directly
   const { data: product, error } = await supabase
     .from('products')
     .select('*')
-    .eq('id', id) // <--- Gamitin yung na-await na id
+    .eq('id', id)
     .single()
 
   if (error || !product) {

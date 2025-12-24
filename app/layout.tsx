@@ -16,9 +16,19 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'My E-Commerce MVP',
-  description: 'Simple and scalable store',
-}
+  title: {
+    template: '%s | BossStore', // E.g., "Black T-Shirt | BossStore"
+    default: 'BossStore | Premium E-commerce', // Default sa Home
+  },
+  description: "The best quality items for the best price. Shop now!",
+  openGraph: {
+    title: 'BossStore',
+    description: 'The best quality items for the best price.',
+    type: 'website',
+    locale: 'en_PH',
+    siteName: 'BossStore',
+  }
+};
 
 export default function RootLayout({
   children,
@@ -39,7 +49,7 @@ export default function RootLayout({
         </div>
 
         <Toaster richColors position="top-center" />
-        
+
       </body>
     </html>
   );
