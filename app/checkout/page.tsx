@@ -12,12 +12,11 @@ export default function CheckoutPage() {
   const router = useRouter()
   const { cart, clearCart } = useCartStore()
   
-  // Form States
+  // States
   const [loading, setLoading] = useState(false)
   const [success, setSuccess] = useState(false)
-  
-  // Dito natin isasave ang ID para mapakita sa success screen
   const [orderId, setOrderId] = useState<string | null>(null)
+  const [isMounted, setIsMounted] = useState(false)
 
   const [formData, setFormData] = useState({
     name: '',
@@ -25,27 +24,45 @@ export default function CheckoutPage() {
     contact: ''
   })
 
-  // Hydration check
-  const [isMounted, setIsMounted] = useState(false)
+  // Hydration fix
   useEffect(() => setIsMounted(true), [])
 
   // Computed Total
   const totalAmount = cart.reduce((total, item) => total + (item.price * item.quantity), 0)
 
-  // Redirect kung walang laman ang cart (Security)
+  // Redirect kung walang laman cart
   useEffect(() => {
     if (isMounted && cart.length === 0 && !success) {
       router.push('/cart')
     }
   }, [isMounted, cart, router, success])
 
-  // --- THE CORE LOGIC: SUBMIT ORDER ---
+  // --- MAIN CHECKOUT LOGIC ---
   const handleCheckout = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
 
     try {
-      // 1. Insert sa 'orders' table
+      // STEP 1: VALIDATION (Check Stock First)
+      // Bago tayo gumawa ng order, check muna natin kung may stock pa sa database
+      for (const item of cart) {
+        const { data: product } = await supabase
+          .from('products')
+          .select('stock, name')
+          .eq('id', item.id)
+          .single()
+
+        if (!product) throw new Error(`Product ${item.name} not found`)
+
+        // Kung mas madami ang order kesa sa stock...
+        if (item.quantity > (product.stock || 0)) {
+          alert(`Pasensya na boss! Yung item na "${product.name}" ay may ${product.stock} stocks nalang. Paki-bawasan ang cart mo.`)
+          setLoading(false)
+          return // STOP THE PROCESS DITO
+        }
+      }
+
+      // STEP 2: CREATE ORDER (Kung may stock, proceed na)
       const { data: orderData, error: orderError } = await supabase
         .from('orders')
         .insert([
@@ -62,11 +79,9 @@ export default function CheckoutPage() {
       if (orderError) throw orderError
 
       const newOrderId = orderData[0].id
-      
-      // SAVE THE ORDER ID
-      setOrderId(newOrderId)
+      setOrderId(newOrderId) // Save ID para sa UI
 
-      // 2. Prepare items data para sa 'order_items' table
+      // STEP 3: SAVE ORDER ITEMS
       const orderItems = cart.map((item) => ({
         order_id: newOrderId,    
         product_id: item.id,
@@ -74,14 +89,32 @@ export default function CheckoutPage() {
         price_at_purchase: item.price 
       }))
 
-      // 3. Insert sa 'order_items' table
       const { error: itemsError } = await supabase
         .from('order_items')
         .insert(orderItems)
 
       if (itemsError) throw itemsError
 
-      // 4. Success! Clear cart & Show Thank You
+      // STEP 4: DEDUCT STOCKS
+      // Loop ulit para bawasan na ang database
+      for (const item of cart) {
+        const { data: currentProduct } = await supabase
+          .from('products')
+          .select('stock')
+          .eq('id', item.id)
+          .single()
+        
+        if (currentProduct) {
+          const newStock = currentProduct.stock - item.quantity
+          
+          await supabase
+            .from('products')
+            .update({ stock: Math.max(0, newStock) }) // Math.max(0) para sure di mag negative
+            .eq('id', item.id)
+        }
+      }
+
+      // STEP 5: SUCCESS
       clearCart()
       setSuccess(true)
 
@@ -93,17 +126,16 @@ export default function CheckoutPage() {
     }
   }
 
-  // Handle Input Changes
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value })
   }
 
   if (!isMounted) return null
 
-  // --- SUCCESS VIEW (Updated with Order ID Display) ---
+  // --- SUCCESS SCREEN ---
   if (success) {
     return (
-      <div className="min-h-[60vh] flex flex-col items-center justify-center text-center px-4 animate-in fade-in zoom-in duration-300">
+      <div className="min-h-[60vh] flex flex-col items-center justify-center text-center px-4 py-10 animate-in fade-in zoom-in duration-300">
         <div className="bg-green-100 p-4 rounded-full mb-4">
           <CheckCircle size={64} className="text-green-600" />
         </div>
@@ -113,7 +145,7 @@ export default function CheckoutPage() {
           Expect a delivery within 3-5 business days.
         </p>
 
-        {/* ORDER ID CARD */}
+        {/* ORDER ID DISPLAY */}
         {orderId && (
           <div className="bg-gray-50 border border-gray-200 p-4 rounded-xl mb-6 w-full max-w-sm">
             <p className="text-xs text-gray-500 uppercase font-bold tracking-wider mb-2">
@@ -125,23 +157,16 @@ export default function CheckoutPage() {
                </code>
             </div>
             <p className="text-xs text-gray-400 mt-2">
-              Please save this ID to track your order.
+              Please copy this ID to track your order.
             </p>
           </div>
         )}
 
         <div className="flex flex-col gap-3 w-full max-w-xs">
-          <Link 
-            href="/track"
-            className="text-blue-600 hover:underline text-sm font-medium"
-          >
+          <Link href="/track" className="text-blue-600 hover:underline text-sm font-medium">
             Track your order here
           </Link>
-
-          <Link 
-            href="/" 
-            className="bg-black text-white px-8 py-3 rounded-lg hover:bg-gray-800 transition font-bold"
-          >
+          <Link href="/" className="bg-black text-white px-8 py-3 rounded-lg hover:bg-gray-800 transition font-bold">
             Continue Shopping
           </Link>
         </div>
@@ -149,7 +174,7 @@ export default function CheckoutPage() {
     )
   }
 
-  // --- CHECKOUT FORM VIEW ---
+  // --- CHECKOUT FORM ---
   return (
     <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
       <Link href="/cart" className="inline-flex items-center text-gray-500 hover:text-black mb-6">
@@ -160,79 +185,37 @@ export default function CheckoutPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
         
-        {/* LEFT: Delivery Form */}
+        {/* LEFT: FORM */}
         <div>
           <form onSubmit={handleCheckout} className="space-y-6">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
-              <input 
-                required
-                name="name"
-                type="text" 
-                placeholder="Juan Dela Cruz"
-                className="w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-black focus:border-transparent outline-none transition"
-                value={formData.name}
-                onChange={handleChange}
-              />
+              <input required name="name" type="text" placeholder="Juan Dela Cruz" className="w-full border border-gray-300 rounded-lg p-3 outline-none focus:ring-2 focus:ring-black transition" value={formData.name} onChange={handleChange} />
             </div>
-
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number</label>
-              <input 
-                required
-                name="contact"
-                type="tel" 
-                placeholder="0917 123 4567"
-                className="w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-black focus:border-transparent outline-none transition"
-                value={formData.contact}
-                onChange={handleChange}
-              />
+              <input required name="contact" type="tel" placeholder="0917 123 4567" className="w-full border border-gray-300 rounded-lg p-3 outline-none focus:ring-2 focus:ring-black transition" value={formData.contact} onChange={handleChange} />
             </div>
-
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Complete Address</label>
-              <textarea 
-                required
-                name="address"
-                rows={3}
-                placeholder="Unit, Street, Barangay, City"
-                className="w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-black focus:border-transparent outline-none transition resize-none"
-                value={formData.address}
-                onChange={handleChange}
-              />
+              <textarea required name="address" rows={3} placeholder="Unit, Street, Barangay, City" className="w-full border border-gray-300 rounded-lg p-3 outline-none focus:ring-2 focus:ring-black transition resize-none" value={formData.address} onChange={handleChange} />
             </div>
 
-            <button 
-              type="submit"
-              disabled={loading}
-              className="w-full bg-black text-white font-bold py-4 rounded-lg hover:bg-gray-800 disabled:bg-gray-400 disabled:cursor-not-allowed transition flex items-center justify-center gap-2"
-            >
-              {loading ? (
-                <>
-                  <Loader2 className="animate-spin" /> Processing...
-                </>
-              ) : (
-                `Place Order (COD) • ₱${totalAmount}`
-              )}
+            <button type="submit" disabled={loading} className="w-full bg-black text-white font-bold py-4 rounded-lg hover:bg-gray-800 disabled:bg-gray-400 disabled:cursor-not-allowed transition flex items-center justify-center gap-2">
+              {loading ? <><Loader2 className="animate-spin" /> Processing...</> : `Place Order (COD) • ₱${totalAmount}`}
             </button>
           </form>
         </div>
 
-        {/* RIGHT: Order Summary (Read-only) */}
+        {/* RIGHT: SUMMARY */}
         <div className="bg-gray-50 p-6 rounded-xl h-fit border border-gray-100">
-          <h2 className="text-lg font-bold text-gray-900 mb-4">Your Items</h2>
+          <h2 className="text-lg font-bold text-gray-900 mb-4">Order Summary</h2>
           <div className="space-y-4 max-h-100 overflow-y-auto pr-2">
             {cart.map((item) => (
               <div key={item.id} className="flex justify-between items-center text-sm">
                 <div className="flex items-center gap-3">
                   <div className="w-12 h-12 bg-gray-200 rounded overflow-hidden relative">
-                     <Image 
-                        src={item.image_url} 
-                        alt={item.name}
-                        fill
-                        className="object-cover"
-                        sizes="48px"
-                     />
+                     <Image src={item.image_url} alt={item.name} fill className="object-cover" sizes="48px" />
                   </div>
                   <div>
                     <p className="font-medium text-gray-900">{item.name}</p>
@@ -243,20 +226,11 @@ export default function CheckoutPage() {
               </div>
             ))}
           </div>
-
+          
           <div className="border-t border-gray-200 mt-6 pt-4 space-y-2">
-             <div className="flex justify-between text-gray-600">
-                <span>Subtotal</span>
-                <span>₱{totalAmount}</span>
-             </div>
-             <div className="flex justify-between text-gray-600">
-                <span>Shipping Fee</span>
-                <span className="text-green-600">Free</span>
-             </div>
-             <div className="flex justify-between text-xl font-bold text-gray-900 pt-2">
-                <span>Total</span>
-                <span>₱{totalAmount}</span>
-             </div>
+             <div className="flex justify-between text-gray-600"><span>Subtotal</span><span>₱{totalAmount}</span></div>
+             <div className="flex justify-between text-gray-600"><span>Shipping</span><span className="text-green-600">Free</span></div>
+             <div className="flex justify-between text-xl font-bold text-gray-900 pt-2"><span>Total</span><span>₱{totalAmount}</span></div>
           </div>
         </div>
 
