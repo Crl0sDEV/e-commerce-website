@@ -152,10 +152,10 @@ export default function AddProductPage() {
               name="category"
               className="w-full border p-3 rounded-lg outline-none focus:ring-2 focus:ring-black"
             >
-              <option value="Clothing">Clothing</option>
-              <option value="Accessories">Accessories</option>
-              <option value="Shoes">Shoes</option>
-              <option value="Electronics">Electronics</option>
+              <option value="clothing">Clothing</option>
+              <option value="accessories">Accessories</option>
+              <option value="shoes">Shoes</option>
+              <option value="electronics">Electronics</option>
             </select>
           </div>
         </div>
