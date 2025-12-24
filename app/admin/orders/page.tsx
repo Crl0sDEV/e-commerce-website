@@ -3,8 +3,9 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { Order } from '@/types'
-import { Package } from 'lucide-react'
+import { Package, ArrowLeft } from 'lucide-react'
 import { toast } from 'sonner'
+import Link from 'next/link'
 
 export default function AdminOrdersPage() {
   // STRICT TYPING: Sinasabi natin na array of 'Order' ito
@@ -85,6 +86,10 @@ export default function AdminOrdersPage() {
 
   return (
     <main className="max-w-7xl mx-auto px-4 py-10">
+
+<Link href="/admin/dashboard" className="flex items-center text-gray-500 mb-6 hover:text-black w-fit">
+    <ArrowLeft size={20} className="mr-2"/> Back to Dashboard
+  </Link>
       <h1 className="text-3xl font-bold mb-8 flex items-center gap-2">
         <Package className="text-black" /> Order Management
       </h1>

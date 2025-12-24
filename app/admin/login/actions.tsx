@@ -2,7 +2,6 @@
 
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
-import { toast } from 'sonner'
 
 export async function loginAction(formData: FormData) {
   const password = formData.get('password')
@@ -20,8 +19,7 @@ export async function loginAction(formData: FormData) {
       path: '/',
     })
 
-    toast.success('Welcome back, Admin!')
-    redirect('/admin/orders')
+    redirect('/admin/dashboard')
   } else {
     // Pag mali, return error
     return { error: 'Wrong password boss!' }
