@@ -9,7 +9,7 @@ import dynamic from 'next/dynamic'
 // 2. Palitan ang pangalan ng function (HINDI na 'export default')
 // Gawin nating "CartContent" or kahit ano, basta hindi exported directly
 function CartContent() {
-  const { cart, addItem, decreaseItem, removeItem } = useCartStore()
+  const { cart, updateQuantity, removeItem } = useCartStore()
   
   // --- TINANGGAL NA NATIN ANG "isMounted" at "useEffect" ---
   // Kasi sure tayo na sa browser lang to tatakbo dahil sa dynamic import sa baba.
@@ -80,11 +80,11 @@ function CartContent() {
                 </button>
 
                 <div className="flex items-center gap-3 bg-gray-50 rounded-lg p-1">
-                  <button 
-                    onClick={() => decreaseItem(item.id)}
-                    className="p-1 hover:bg-white rounded shadow-sm transition disabled:opacity-50"
-                    disabled={item.quantity <= 1}
-                  >
+                <button 
+                      onClick={() => updateQuantity(item.id, item.quantity - 1)}
+                      disabled={item.quantity <= 1}
+                      className="p-1 hover:bg-white rounded disabled:opacity-30 disabled:cursor-not-allowed transition"
+                    >
                     <Minus size={16} />
                   </button>
                   
@@ -93,9 +93,9 @@ function CartContent() {
                   </span>
 
                   <button 
-                    onClick={() => addItem(item)}
-                    className="p-1 hover:bg-white rounded shadow-sm transition"
-                  >
+                      onClick={() => updateQuantity(item.id, item.quantity + 1)}
+                      className="p-1 hover:bg-white rounded transition"
+                    >
                     <Plus size={16} />
                   </button>
                 </div>
