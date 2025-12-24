@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, CheckCircle, Loader2 } from 'lucide-react'
 import Link from 'next/link'
-import Image from 'next/image' // <--- 1. IMPORT THIS
+import Image from 'next/image'
 import useCartStore from '@/store/useCartStore'
 import { supabase } from '@/lib/supabaseClient'
 
@@ -15,6 +15,10 @@ export default function CheckoutPage() {
   // Form States
   const [loading, setLoading] = useState(false)
   const [success, setSuccess] = useState(false)
+  
+  // Dito natin isasave ang ID para mapakita sa success screen
+  const [orderId, setOrderId] = useState<string | null>(null)
+
   const [formData, setFormData] = useState({
     name: '',
     address: '',
@@ -58,6 +62,9 @@ export default function CheckoutPage() {
       if (orderError) throw orderError
 
       const newOrderId = orderData[0].id
+      
+      // SAVE THE ORDER ID
+      setOrderId(newOrderId)
 
       // 2. Prepare items data para sa 'order_items' table
       const orderItems = cart.map((item) => ({
@@ -93,7 +100,7 @@ export default function CheckoutPage() {
 
   if (!isMounted) return null
 
-  // --- SUCCESS VIEW (Pag tapos na umorder) ---
+  // --- SUCCESS VIEW (Updated with Order ID Display) ---
   if (success) {
     return (
       <div className="min-h-[60vh] flex flex-col items-center justify-center text-center px-4 animate-in fade-in zoom-in duration-300">
@@ -101,16 +108,43 @@ export default function CheckoutPage() {
           <CheckCircle size={64} className="text-green-600" />
         </div>
         <h1 className="text-3xl font-bold text-gray-900 mb-2">Order Placed!</h1>
-        <p className="text-gray-500 max-w-md mb-8">
+        <p className="text-gray-500 max-w-md mb-6">
           Thank you, {formData.name}! We have received your order. 
           Expect a delivery within 3-5 business days.
         </p>
-        <Link 
-          href="/" 
-          className="bg-black text-white px-8 py-3 rounded-lg hover:bg-gray-800 transition"
-        >
-          Continue Shopping
-        </Link>
+
+        {/* ORDER ID CARD */}
+        {orderId && (
+          <div className="bg-gray-50 border border-gray-200 p-4 rounded-xl mb-6 w-full max-w-sm">
+            <p className="text-xs text-gray-500 uppercase font-bold tracking-wider mb-2">
+              Your Order ID
+            </p>
+            <div className="flex items-center justify-center gap-2 bg-white border border-gray-200 p-2 rounded-lg">
+               <code className="text-sm sm:text-base font-mono font-bold text-gray-900 select-all break-all">
+                 {orderId}
+               </code>
+            </div>
+            <p className="text-xs text-gray-400 mt-2">
+              Please save this ID to track your order.
+            </p>
+          </div>
+        )}
+
+        <div className="flex flex-col gap-3 w-full max-w-xs">
+          <Link 
+            href="/track"
+            className="text-blue-600 hover:underline text-sm font-medium"
+          >
+            Track your order here
+          </Link>
+
+          <Link 
+            href="/" 
+            className="bg-black text-white px-8 py-3 rounded-lg hover:bg-gray-800 transition font-bold"
+          >
+            Continue Shopping
+          </Link>
+        </div>
       </div>
     )
   }
@@ -187,22 +221,19 @@ export default function CheckoutPage() {
         {/* RIGHT: Order Summary (Read-only) */}
         <div className="bg-gray-50 p-6 rounded-xl h-fit border border-gray-100">
           <h2 className="text-lg font-bold text-gray-900 mb-4">Your Items</h2>
-          <div className="space-y-4 max-h-100 overflow-y-auto pr-2"> {/* Fixed scroll height */}
+          <div className="space-y-4 max-h-100 overflow-y-auto pr-2">
             {cart.map((item) => (
               <div key={item.id} className="flex justify-between items-center text-sm">
                 <div className="flex items-center gap-3">
-                  {/* --- UPDATED IMAGE PART --- */}
                   <div className="w-12 h-12 bg-gray-200 rounded overflow-hidden relative">
                      <Image 
                         src={item.image_url} 
-                        alt={item.name} // Added ALT prop (Required)
-                        fill // Magic prop: Fills the parent div
+                        alt={item.name}
+                        fill
                         className="object-cover"
-                        sizes="48px" // Optimization tip
+                        sizes="48px"
                      />
                   </div>
-                  {/* ------------------------- */}
-                  
                   <div>
                     <p className="font-medium text-gray-900">{item.name}</p>
                     <p className="text-gray-500">Qty: {item.quantity}</p>
