@@ -7,6 +7,7 @@ import Link from 'next/link'
 import Image from 'next/image'
 import useCartStore from '@/store/useCartStore'
 import { supabase } from '@/lib/supabaseClient'
+import { toast } from 'sonner'
 
 export default function CheckoutPage() {
   const router = useRouter()
@@ -56,7 +57,7 @@ export default function CheckoutPage() {
 
         // Kung mas madami ang order kesa sa stock...
         if (item.quantity > (product.stock || 0)) {
-          alert(`Pasensya na boss! Yung item na "${product.name}" ay may ${product.stock} stocks nalang. Paki-bawasan ang cart mo.`)
+          toast.error(`Stocks changed! "${product.name}" only has ${product.stock} left.`)
           setLoading(false)
           return // STOP THE PROCESS DITO
         }
@@ -120,7 +121,7 @@ export default function CheckoutPage() {
 
     } catch (error) {
       console.error('Checkout Error:', error)
-      alert('May error sa pag-place ng order. Paki-try ulit.')
+      toast.error('Checkout failed. Please try again.')
     } finally {
       setLoading(false)
     }

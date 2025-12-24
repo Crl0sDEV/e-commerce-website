@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { Order } from '@/types'
 import { Package } from 'lucide-react'
+import { toast } from 'sonner'
 
 export default function AdminOrdersPage() {
   // STRICT TYPING: Sinasabi natin na array of 'Order' ito
@@ -62,11 +63,11 @@ export default function AdminOrdersPage() {
 
       // Refresh list after successful update
       fetchOrders()
-      alert(`Order updated to ${newStatus}`)
+      toast.success(`Order updated to ${newStatus}`)
       
     } catch (error) {
       console.error('Update failed:', error)
-      alert('Failed to update status. Check console.')
+      toast.warning('Failed to update status.')
     }
   }
 

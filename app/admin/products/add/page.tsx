@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabaseClient'
 import { useRouter } from 'next/navigation'
 import { Upload, Loader2, ArrowLeft, CheckCircle } from 'lucide-react'
 import Link from 'next/link'
+import { toast } from 'sonner'
 
 export default function AddProductPage() {
   const router = useRouter()
@@ -72,12 +73,12 @@ export default function AddProductPage() {
 
       if (dbError) throw dbError
 
-      alert('Product added successfully!')
+      toast.success('Product added successfully!')
       router.push('/') 
 
     } catch (error) {
       console.error('Error adding product:', error)
-      alert('May error boss. Check console.')
+      toast.warning('Failed to add product.')
     } finally {
       setLoading(false)
     }

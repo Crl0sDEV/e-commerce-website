@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { CartItem, Product } from '@/types'
+import { toast } from 'sonner'
 
 interface CartState {
   cart: CartItem[]
@@ -23,7 +24,7 @@ const useCartStore = create<CartState>()(
         if (existingItem) {
           // CHECK: Kung ang nasa cart + 1 ay sobra na sa stock, STOP.
           if (existingItem.quantity + 1 > availableStock) {
-            alert(`Sorry boss, ${availableStock} lang ang stocks natin para sa ${product.name}.`)
+            toast.error(`Oops! Only ${availableStock} stocks left for ${product.name}.`)
             return // Stop execution
           }
 
@@ -34,19 +35,22 @@ const useCartStore = create<CartState>()(
               : item
           )
           set({ cart: updatedCart })
+          toast.success('Added more to cart!')
         } else {
           // New Item Check
           if (availableStock < 1) {
-            alert('Sold out na ito boss!')
+            toast.error('Item is sold out!')
             return
           }
 
           set({ cart: [...currentCart, { ...product, quantity: 1 }] })
+          toast.success(`${product.name} added to cart!`)
         }
       },
 
       removeItem: (productId) => {
         set({ cart: get().cart.filter((item) => item.id !== productId) })
+        toast.info('Item removed from cart.')
       },
 
       updateQuantity: (productId, quantity) => {
@@ -55,7 +59,7 @@ const useCartStore = create<CartState>()(
         
         // CHECK: Wag payagan kung sobra sa stock
         if (item && quantity > (item.stock || 0)) {
-           alert(`Hanggang ${item.stock} lang pwede boss.`)
+          toast.error(`Max stock reached (${item.stock}).`)
            return
         }
         
