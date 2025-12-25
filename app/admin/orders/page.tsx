@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { Order } from '@/types'
-import { Package, ArrowLeft } from 'lucide-react'
+import { Package, ArrowLeft, Printer } from 'lucide-react'
 import { toast } from 'sonner'
 import Link from 'next/link'
 
@@ -86,10 +86,12 @@ export default function AdminOrdersPage() {
 
   return (
     <main className="max-w-7xl mx-auto px-4 py-10">
-
-<Link href="/admin/dashboard" className="flex items-center text-gray-500 mb-6 hover:text-black w-fit">
-    <ArrowLeft size={20} className="mr-2"/> Back to Dashboard
-  </Link>
+      <Link
+        href="/admin/dashboard"
+        className="flex items-center text-gray-500 mb-6 hover:text-black w-fit"
+      >
+        <ArrowLeft size={20} className="mr-2" /> Back to Dashboard
+      </Link>
       <h1 className="text-3xl font-bold mb-8 flex items-center gap-2">
         <Package className="text-black" /> Order Management
       </h1>
@@ -98,21 +100,33 @@ export default function AdminOrdersPage() {
         <table className="w-full bg-white border border-gray-200 rounded-lg shadow-sm">
           <thead className="bg-gray-50 border-b">
             <tr>
-              <th className="p-4 text-left font-medium text-gray-500">Order ID / Date</th>
-              <th className="p-4 text-left font-medium text-gray-500">Customer</th>
+              <th className="p-4 text-left font-medium text-gray-500">
+                Order ID / Date
+              </th>
+              <th className="p-4 text-left font-medium text-gray-500">
+                Customer
+              </th>
               <th className="p-4 text-left font-medium text-gray-500">Items</th>
               <th className="p-4 text-left font-medium text-gray-500">Total</th>
-              <th className="p-4 text-left font-medium text-gray-500">Status</th>
-              <th className="p-4 text-left font-medium text-gray-500">Action</th>
+              <th className="p-4 text-left font-medium text-gray-500">
+                Status
+              </th>
+              <th className="p-4 text-left font-medium text-gray-500">
+                Invoice
+              </th>
+              <th className="p-4 text-left font-medium text-gray-500">
+                Action
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {orders.map((order) => (
               <tr key={order.id} className="hover:bg-gray-50 transition">
-                
                 {/* ID & Date */}
                 <td className="p-4 align-top">
-                  <p className="font-mono text-xs text-gray-400 mb-1">{order.id.slice(0, 8)}...</p>
+                  <p className="font-mono text-xs text-gray-400 mb-1">
+                    {order.id.slice(0, 8)}...
+                  </p>
                   <p className="text-sm font-medium">
                     {new Date(order.created_at).toLocaleDateString()}
                   </p>
@@ -123,18 +137,28 @@ export default function AdminOrdersPage() {
 
                 {/* Customer Details */}
                 <td className="p-4 align-top">
-                  <p className="font-bold text-gray-900">{order.customer_name}</p>
-                  <p className="text-sm text-gray-600">{order.customer_contact}</p>
-                  <p className="text-xs text-gray-500 mt-1 max-w-50">{order.customer_address}</p>
+                  <p className="font-bold text-gray-900">
+                    {order.customer_name}
+                  </p>
+                  <p className="text-sm text-gray-600">
+                    {order.customer_contact}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1 max-w-50">
+                    {order.customer_address}
+                  </p>
                 </td>
 
                 {/* Items List (STRICT TYPE SAFE NA ITO) */}
                 <td className="p-4 align-top">
                   <div className="space-y-1">
                     {order.order_items?.map((item) => (
-                      <div key={item.id} className="text-sm flex justify-between gap-4">
+                      <div
+                        key={item.id}
+                        className="text-sm flex justify-between gap-4"
+                      >
                         <span className="text-gray-700">
-                          {item.quantity}x {item.products?.name || 'Unknown Item'}
+                          {item.quantity}x{" "}
+                          {item.products?.name || "Unknown Item"}
                         </span>
                       </div>
                     ))}
@@ -148,14 +172,30 @@ export default function AdminOrdersPage() {
 
                 {/* Status Badge */}
                 <td className="p-4 align-top">
-                  <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide ${getStatusColor(order.status)}`}>
+                  <span
+                    className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide ${getStatusColor(
+                      order.status
+                    )}`}
+                  >
                     {order.status}
                   </span>
                 </td>
 
+                {/* PRINT BUTTON */}
+                <td className="p-4 align-top">
+                  <Link
+                    href={`/admin/orders/${order.id}/print`}
+                    target="_blank"
+                    className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-gray-100 text-gray-600 hover:bg-black hover:text-white transition"
+                    title="Print Invoice"
+                  >
+                    <Printer size={16} />{" "}
+                  </Link>
+                </td>
+
                 {/* Actions (Dropdown) */}
                 <td className="p-4 align-top">
-                  <select 
+                  <select
                     value={order.status}
                     onChange={(e) => updateStatus(order.id, e.target.value)}
                     className="border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-black cursor-pointer"
@@ -166,7 +206,6 @@ export default function AdminOrdersPage() {
                     <option value="cancelled">Cancelled</option>
                   </select>
                 </td>
-
               </tr>
             ))}
 
@@ -181,5 +220,5 @@ export default function AdminOrdersPage() {
         </table>
       </div>
     </main>
-  )
+  );
 }
