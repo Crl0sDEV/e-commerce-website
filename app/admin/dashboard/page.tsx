@@ -62,13 +62,13 @@ export default function AdminDashboard() {
         </h1>
         <div className="flex gap-2">
             <Link href="/admin/coupons" className="bg-white border border-gray-300 px-4 py-2 rounded-lg hover:bg-gray-50 text-sm font-medium">
-                Create Promo Code
+             Create Promo Code
             </Link>
            <Link href="/admin/orders" className="bg-white border border-gray-300 px-4 py-2 rounded-lg hover:bg-gray-50 text-sm font-medium">
              Manage Orders
            </Link>
-           <Link href="/admin/products/add" className="bg-black text-white px-4 py-2 rounded-lg hover:bg-gray-800 text-sm font-bold">
-             + Add Product
+           <Link href="/admin/products" className="bg-black text-white px-4 py-2 rounded-lg hover:bg-gray-800 text-sm font-bold">
+             Manage Inventory
            </Link>
         </div>
       </div>

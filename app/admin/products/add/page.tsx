@@ -87,10 +87,10 @@ export default function AddProductPage() {
   return (
     <div className="max-w-2xl mx-auto px-4 py-10">
       <Link
-        href="/admin/dashboard"
+        href="/admin/products"
         className="flex items-center text-gray-500 mb-6 hover:text-black"
       >
-        <ArrowLeft size={20} className="mr-2" /> Back to Dashboard
+        <ArrowLeft size={20} className="mr-2" /> Back
       </Link>
 
       <h1 className="text-3xl font-bold mb-8">Add New Product</h1>
