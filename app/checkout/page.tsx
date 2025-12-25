@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, CheckCircle, Loader2 } from 'lucide-react'
+import { ArrowLeft, CheckCircle, Loader2, Tag } from 'lucide-react'
 import Link from 'next/link'
 import Image from 'next/image'
 import useCartStore from '@/store/useCartStore'
@@ -19,33 +19,69 @@ export default function CheckoutPage() {
   const [orderId, setOrderId] = useState<string | null>(null)
   const [isMounted, setIsMounted] = useState(false)
 
+  // PROMO CODE STATES
+  const [couponCode, setCouponCode] = useState('')
+  const [discountAmount, setDiscountAmount] = useState(0)
+  const [appliedCoupon, setAppliedCoupon] = useState<string | null>(null)
+  const [isValidatingCoupon, setIsValidatingCoupon] = useState(false)
+
   const [formData, setFormData] = useState({
     name: '',
     address: '',
     contact: ''
   })
 
-  // Hydration fix
   useEffect(() => setIsMounted(true), [])
 
-  // Computed Total
-  const totalAmount = cart.reduce((total, item) => total + (item.price * item.quantity), 0)
+  // 1. COMPUTE TOTALS
+  const subTotal = cart.reduce((total, item) => total + (item.price * item.quantity), 0)
+  const totalAmount = Math.max(0, subTotal - discountAmount) // Final amount to pay
 
-  // Redirect kung walang laman cart
   useEffect(() => {
     if (isMounted && cart.length === 0 && !success) {
       router.push('/cart')
     }
   }, [isMounted, cart, router, success])
 
-  // --- MAIN CHECKOUT LOGIC ---
+  // --- LOGIC: APPLY COUPON ---
+  const handleApplyCoupon = async () => {
+    if (!couponCode.trim()) return
+    setIsValidatingCoupon(true)
+
+    try {
+      const { data: coupon, error } = await supabase
+        .from('coupons')
+        .select('*')
+        .eq('code', couponCode.toUpperCase().trim())
+        .eq('is_active', true)
+        .single()
+
+      if (error || !coupon) {
+        toast.error('Invalid or expired coupon code.')
+        setDiscountAmount(0)
+        setAppliedCoupon(null)
+      } else {
+        // Calculate Discount
+        const discount = (subTotal * coupon.discount_percentage) / 100
+        setDiscountAmount(discount)
+        setAppliedCoupon(coupon.code)
+        toast.success(`Coupon applied! You saved ₱${discount.toFixed(2)}`)
+      }
+    } catch (error) {
+      console.error(error)
+      toast.error('Error checking coupon.')
+    } finally {
+      setIsValidatingCoupon(false)
+    }
+  }
+
+  // --- LOGIC: CHECKOUT ---
   const handleCheckout = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
 
     try {
-      // STEP 1: VALIDATION (Check Stock First)
-      // Bago tayo gumawa ng order, check muna natin kung may stock pa sa database
+      // 1. Validation (Stock Check)
       for (const item of cart) {
         const { data: product } = await supabase
           .from('products')
@@ -55,15 +91,14 @@ export default function CheckoutPage() {
 
         if (!product) throw new Error(`Product ${item.name} not found`)
 
-        // Kung mas madami ang order kesa sa stock...
         if (item.quantity > (product.stock || 0)) {
-          toast.error(`Stocks changed! "${product.name}" only has ${product.stock} left.`)
+          toast.error(`Stock changed for ${item.name}. Only ${product.stock} left.`)
           setLoading(false)
-          return // STOP THE PROCESS DITO
+          return
         }
       }
 
-      // STEP 2: CREATE ORDER (Kung may stock, proceed na)
+      // 2. Create Order (WITH DISCOUNT INFO)
       const { data: orderData, error: orderError } = await supabase
         .from('orders')
         .insert([
@@ -71,7 +106,8 @@ export default function CheckoutPage() {
             customer_name: formData.name,
             customer_address: formData.address,
             customer_contact: formData.contact,
-            total_amount: totalAmount,
+            total_amount: totalAmount, // <--- DISCOUNTED PRICE
+            discount_amount: discountAmount, // <--- RECORD THE SAVINGS
             status: 'pending'
           }
         ])
@@ -80,9 +116,9 @@ export default function CheckoutPage() {
       if (orderError) throw orderError
 
       const newOrderId = orderData[0].id
-      setOrderId(newOrderId) // Save ID para sa UI
+      setOrderId(newOrderId)
 
-      // STEP 3: SAVE ORDER ITEMS
+      // 3. Save Items
       const orderItems = cart.map((item) => ({
         order_id: newOrderId,    
         product_id: item.id,
@@ -96,8 +132,7 @@ export default function CheckoutPage() {
 
       if (itemsError) throw itemsError
 
-      // STEP 4: DEDUCT STOCKS
-      // Loop ulit para bawasan na ang database
+      // 4. Deduct Stocks
       for (const item of cart) {
         const { data: currentProduct } = await supabase
           .from('products')
@@ -107,21 +142,19 @@ export default function CheckoutPage() {
         
         if (currentProduct) {
           const newStock = currentProduct.stock - item.quantity
-          
           await supabase
             .from('products')
-            .update({ stock: Math.max(0, newStock) }) // Math.max(0) para sure di mag negative
+            .update({ stock: Math.max(0, newStock) })
             .eq('id', item.id)
         }
       }
 
-      // STEP 5: SUCCESS
       clearCart()
       setSuccess(true)
 
     } catch (error) {
       console.error('Checkout Error:', error)
-      toast.error('Checkout failed. Please try again.')
+      toast.error('Failed to place order.')
     } finally {
       setLoading(false)
     }
@@ -133,7 +166,6 @@ export default function CheckoutPage() {
 
   if (!isMounted) return null
 
-  // --- SUCCESS SCREEN ---
   if (success) {
     return (
       <div className="min-h-[60vh] flex flex-col items-center justify-center text-center px-4 py-10 animate-in fade-in zoom-in duration-300">
@@ -142,40 +174,25 @@ export default function CheckoutPage() {
         </div>
         <h1 className="text-3xl font-bold text-gray-900 mb-2">Order Placed!</h1>
         <p className="text-gray-500 max-w-md mb-6">
-          Thank you, {formData.name}! We have received your order. 
-          Expect a delivery within 3-5 business days.
+          Thank you, {formData.name}! We have received your order.
         </p>
-
-        {/* ORDER ID DISPLAY */}
         {orderId && (
           <div className="bg-gray-50 border border-gray-200 p-4 rounded-xl mb-6 w-full max-w-sm">
-            <p className="text-xs text-gray-500 uppercase font-bold tracking-wider mb-2">
-              Your Order ID
-            </p>
+            <p className="text-xs text-gray-500 uppercase font-bold tracking-wider mb-2">Your Order ID</p>
             <div className="flex items-center justify-center gap-2 bg-white border border-gray-200 p-2 rounded-lg">
-               <code className="text-sm sm:text-base font-mono font-bold text-gray-900 select-all break-all">
-                 {orderId}
-               </code>
+               <code className="text-sm sm:text-base font-mono font-bold text-gray-900 select-all break-all">{orderId}</code>
             </div>
-            <p className="text-xs text-gray-400 mt-2">
-              Please copy this ID to track your order.
-            </p>
+            <p className="text-xs text-gray-400 mt-2">Please copy this ID to track your order.</p>
           </div>
         )}
-
         <div className="flex flex-col gap-3 w-full max-w-xs">
-          <Link href="/track" className="text-blue-600 hover:underline text-sm font-medium">
-            Track your order here
-          </Link>
-          <Link href="/" className="bg-black text-white px-8 py-3 rounded-lg hover:bg-gray-800 transition font-bold">
-            Continue Shopping
-          </Link>
+          <Link href="/track" className="text-blue-600 hover:underline text-sm font-medium">Track your order here</Link>
+          <Link href="/" className="bg-black text-white px-8 py-3 rounded-lg hover:bg-gray-800 transition font-bold">Continue Shopping</Link>
         </div>
       </div>
     )
   }
 
-  // --- CHECKOUT FORM ---
   return (
     <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
       <Link href="/cart" className="inline-flex items-center text-gray-500 hover:text-black mb-6">
@@ -203,15 +220,15 @@ export default function CheckoutPage() {
             </div>
 
             <button type="submit" disabled={loading} className="w-full bg-black text-white font-bold py-4 rounded-lg hover:bg-gray-800 disabled:bg-gray-400 disabled:cursor-not-allowed transition flex items-center justify-center gap-2">
-              {loading ? <><Loader2 className="animate-spin" /> Processing...</> : `Place Order (COD) • ₱${totalAmount}`}
+              {loading ? <><Loader2 className="animate-spin" /> Processing...</> : `Place Order (COD) • ₱${totalAmount.toFixed(2)}`}
             </button>
           </form>
         </div>
 
         {/* RIGHT: SUMMARY */}
-        <div className="bg-gray-50 p-6 rounded-xl h-fit border border-gray-100">
+        <div className="bg-gray-50 p-6 rounded-xl h-fit border border-gray-100 sticky top-24">
           <h2 className="text-lg font-bold text-gray-900 mb-4">Order Summary</h2>
-          <div className="space-y-4 max-h-100 overflow-y-auto pr-2">
+          <div className="space-y-4 max-h-75 overflow-y-auto pr-2">
             {cart.map((item) => (
               <div key={item.id} className="flex justify-between items-center text-sm">
                 <div className="flex items-center gap-3">
@@ -227,11 +244,47 @@ export default function CheckoutPage() {
               </div>
             ))}
           </div>
+
+          {/* PROMO CODE INPUT */}
+          <div className="mt-6 pt-6 border-t border-gray-200">
+             <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Promo Code</label>
+             <div className="flex gap-2">
+                <input 
+                  type="text" 
+                  placeholder="WELCOME10" 
+                  className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm uppercase outline-none focus:border-black"
+                  value={couponCode}
+                  onChange={(e) => setCouponCode(e.target.value)}
+                  disabled={appliedCoupon !== null} // Disable if already applied
+                />
+                <button 
+                   onClick={handleApplyCoupon}
+                   disabled={isValidatingCoupon || appliedCoupon !== null || !couponCode}
+                   className="bg-gray-900 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-gray-700 disabled:opacity-50"
+                >
+                   {appliedCoupon ? 'Applied' : 'Apply'}
+                </button>
+             </div>
+          </div>
           
+          {/* TOTALS COMPUTATION */}
           <div className="border-t border-gray-200 mt-6 pt-4 space-y-2">
-             <div className="flex justify-between text-gray-600"><span>Subtotal</span><span>₱{totalAmount}</span></div>
+             <div className="flex justify-between text-gray-600"><span>Subtotal</span><span>₱{subTotal.toFixed(2)}</span></div>
+             
+             {/* SHOW DISCOUNT ROW IF APPLIED */}
+             {discountAmount > 0 && (
+               <div className="flex justify-between text-green-600 font-medium animate-in fade-in">
+                 <span className="flex items-center gap-1"><Tag size={14}/> Discount ({appliedCoupon})</span>
+                 <span>-₱{discountAmount.toFixed(2)}</span>
+               </div>
+             )}
+
              <div className="flex justify-between text-gray-600"><span>Shipping</span><span className="text-green-600">Free</span></div>
-             <div className="flex justify-between text-xl font-bold text-gray-900 pt-2"><span>Total</span><span>₱{totalAmount}</span></div>
+             
+             <div className="flex justify-between text-xl font-bold text-gray-900 pt-2 border-t border-dashed border-gray-300 mt-2">
+                <span>Total</span>
+                <span>₱{totalAmount.toFixed(2)}</span>
+             </div>
           </div>
         </div>
 

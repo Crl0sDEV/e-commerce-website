@@ -61,6 +61,9 @@ export default function AdminDashboard() {
           <TrendingUp className="text-black" /> CEO Dashboard
         </h1>
         <div className="flex gap-2">
+            <Link href="/admin/coupons" className="bg-white border border-gray-300 px-4 py-2 rounded-lg hover:bg-gray-50 text-sm font-medium">
+                Create Promo Code
+            </Link>
            <Link href="/admin/orders" className="bg-white border border-gray-300 px-4 py-2 rounded-lg hover:bg-gray-50 text-sm font-medium">
              Manage Orders
            </Link>
