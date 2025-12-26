@@ -5,6 +5,7 @@ import { ArrowLeft, Tag } from 'lucide-react'
 import AddToCartButton from '@/components/AddToCartButton'
 import { notFound } from 'next/navigation'
 import { Metadata } from 'next'
+import ProductCard from '@/components/ProductCard'
 
 interface Props {
     params: Promise<{ id: string }>
@@ -46,74 +47,92 @@ interface Props {
     }
   }
 
-export default async function ProductPage({ params }: { params: Promise<{ id: string }> }) {
+  export default async function ProductPage({ params }: Props) {
+    const { id } = await params
   
-  const { id } = await params
-
-  const { data: product, error } = await supabase
-    .from('products')
-    .select('*')
-    .eq('id', id)
-    .single()
-
-  if (error || !product) {
-    notFound()
-  }
-
-  return (
-    <main className="max-w-7xl mx-auto px-4 py-10 min-h-screen">
-      
-      <Link href="/" className="inline-flex items-center text-gray-500 hover:text-black mb-8 transition">
+    // 1. Fetch CURRENT Product
+    const { data: product, error } = await supabase
+      .from('products')
+      .select('*')
+      .eq('id', id)
+      .single()
+  
+    if (error || !product) {
+      notFound()
+    }
+  
+    // 2. Fetch RELATED Products
+    const { data: relatedProducts } = await supabase
+      .from('products')
+      .select('*')
+      .eq('category', product.category) // Same category
+      .neq('id', product.id)            // NOT the current ID (neq = not equal)
+      .limit(4)                         // 4 items lang
+  
+    return (
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+        
+        <Link href="/" className="inline-flex items-center text-gray-500 hover:text-black mb-8 transition">
         <ArrowLeft size={20} className="mr-2" /> Back to Store
       </Link>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-10 lg:gap-16">
-        
-        {/* Product Image */}
-        <div className="relative aspect-square bg-gray-100 rounded-2xl overflow-hidden shadow-sm">
-          <Image 
-            src={product.image_url} 
-            alt={product.name}
-            fill
-            className="object-cover hover:scale-105 transition-transform duration-500"
-            sizes="(max-width: 768px) 100vw, 50vw"
-            priority 
-          />
-        </div>
-
-        {/* Product Details */}
-        <div className="flex flex-col justify-center">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-10 mb-20">
           
-          <div className="mb-6">
-            <span className="inline-flex items-center gap-1 bg-gray-100 text-gray-600 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide mb-4">
-              <Tag size={12} />
-              {product.category || 'Item'}
+          {/* Left: Image */}
+          <div className="relative aspect-square bg-gray-100 rounded-2xl overflow-hidden shadow-sm">
+            <Image 
+              src={product.image_url} 
+              alt={product.name} 
+              fill 
+              className="object-cover"
+              priority
+            />
+          </div>
+  
+          {/* Right: Info */}
+          <div className="flex flex-col">
+            <span className="text-sm text-gray-500 uppercase tracking-wider font-semibold mb-2">
+            <Tag size={12} />
+              {product.category}
             </span>
+            <h1 className="text-4xl font-extrabold text-gray-900 mb-4">{product.name}</h1>
+            <p className="text-2xl font-bold text-gray-900 mb-6">₱{product.price}</p>
             
-            <h1 className="text-4xl font-extrabold text-gray-900 mb-2">
-              {product.name}
-            </h1>
-            
-            <p className="text-2xl font-semibold text-gray-900">
-              ₱{product.price}
-            </p>
+            <div className="prose prose-sm text-gray-600 mb-8">
+              <p>{product.description}</p>
+            </div>
+  
+            <div className="mt-auto">
+               {/* Stock Indicator */}
+               <div className="mb-4">
+                  {product.stock > 0 ? (
+                    <p className="text-green-600 font-medium flex items-center gap-2">
+                      <span className="w-2 h-2 bg-green-600 rounded-full animate-pulse"></span>
+                      In Stock ({product.stock} available)
+                    </p>
+                  ) : (
+                    <p className="text-red-600 font-bold">Out of Stock</p>
+                  )}
+               </div>
+  
+               <AddToCartButton product={product} />
+            </div>
           </div>
-
-          <div className="prose prose-sm text-gray-600 mb-8 border-t border-b border-gray-100 py-6">
-            <p className="text-lg leading-relaxed">{product.description}</p>
-          </div>
-
-          <div className="mt-auto">
-            <AddToCartButton product={product} />
-            
-            <p className="text-center text-xs text-gray-400 mt-4">
-              Secure Checkout • Fast Delivery • Free Returns
-            </p>
-          </div>
-
         </div>
-
-      </div>
-    </main>
-  )
-}
+  
+        {/* --- NEW: RELATED PRODUCTS SECTION --- */}
+        {relatedProducts && relatedProducts.length > 0 && (
+          <div className="border-t border-gray-200 pt-16">
+            <h2 className="text-2xl font-bold text-gray-900 mb-8">You might also like</h2>
+            
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
+              {relatedProducts.map((related) => (
+                <ProductCard key={related.id} product={related} />
+              ))}
+            </div>
+          </div>
+        )}
+  
+      </main>
+    )
+  }
