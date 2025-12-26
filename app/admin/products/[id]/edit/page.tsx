@@ -113,7 +113,7 @@ export default function EditProductPage() {
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Price (₱)</label>
-            <input name="price" required type="number" step="0.01" value={formData.price} onChange={handleChange} className="w-full border p-3 rounded-lg outline-none focus:ring-2 focus:ring-black" />
+            <input name="price" required type="number" min="0" step="0.01" value={formData.price} onChange={handleChange} className="w-full border p-3 rounded-lg outline-none focus:ring-2 focus:ring-black" />
           </div>
 
           {/* --- STOCK FIELD --- */}

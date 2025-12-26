@@ -8,6 +8,7 @@ import Image from 'next/image'
 import useCartStore from '@/store/useCartStore'
 import { supabase } from '@/lib/supabaseClient'
 import { toast } from 'sonner'
+import PhoneInputCustom from '@/components/PhoneInputCustom' // <--- 1. IMPORT THIS
 
 export default function CheckoutPage() {
   const router = useRouter()
@@ -28,14 +29,20 @@ export default function CheckoutPage() {
   const [formData, setFormData] = useState({
     name: '',
     address: '',
-    contact: ''
+    contact: '' // Dito papasok yung +639...
   })
 
   useEffect(() => setIsMounted(true), [])
 
+  // HELPER: Sanitize Phone (Linisin bago i-save sa DB)
+  // Input: "+63 917 123 4567" -> Output: "639171234567" (Numbers only)
+  const sanitizePhone = (phone: string) => {
+    return phone ? phone.replace(/\D/g, '') : ''
+  }
+
   // 1. COMPUTE TOTALS
   const subTotal = cart.reduce((total, item) => total + (item.price * item.quantity), 0)
-  const totalAmount = Math.max(0, subTotal - discountAmount) // Final amount to pay
+  const totalAmount = Math.max(0, subTotal - discountAmount) 
 
   useEffect(() => {
     if (isMounted && cart.length === 0 && !success) {
@@ -43,21 +50,22 @@ export default function CheckoutPage() {
     }
   }, [isMounted, cart, router, success])
 
-  // --- LOGIC: APPLY COUPON (STRICT CHECK) ---
+  // --- LOGIC: APPLY COUPON ---
   const handleApplyCoupon = async () => {
-    // 1. Basic Input Checks
     if (!couponCode.trim()) return
 
-    // Require Contact Number First (Para may ma-check tayo sa history)
-    if (!formData.contact || formData.contact.trim().length < 10) {
-      toast.warning('Please enter your Phone Number first to apply coupons.')
+    const cleanPhone = sanitizePhone(formData.contact)
+
+    // Check if valid length (usually 10-12 digits depending on country)
+    if (!cleanPhone || cleanPhone.length < 10) {
+      toast.warning('Please enter a valid Phone Number first.')
       return
     }
     
     setIsValidatingCoupon(true)
 
     try {
-      // 2. Fetch Coupon Details
+      // 1. Fetch Coupon
       const { data: coupon, error } = await supabase
         .from('coupons')
         .select('*')
@@ -73,30 +81,28 @@ export default function CheckoutPage() {
         return
       }
 
-      // 3. CHECK EXPIRATION (New)
-      // Kung may expiration date at lagpas na sa ngayon...
+      // 2. Expiration Check
       if (coupon.valid_until && new Date() > new Date(coupon.valid_until)) {
         toast.error('This promo code has expired.')
         setIsValidatingCoupon(false)
         return
       }
 
-      // 4. CHECK ONE-TIME USE (New)
-      // Check kung nagamit na ng phone number na to ang coupon na to
+      // 3. HISTORY CHECK (using clean phone)
       const { data: existingUsage } = await supabase
         .from('orders')
         .select('id')
-        .eq('customer_contact', formData.contact) // Search by Phone
-        .eq('used_coupon_code', coupon.code)      // Search by Code
-        .maybeSingle() // Returns data if found, null if not
+        .eq('used_coupon_code', coupon.code)
+        .ilike('customer_contact', `%${cleanPhone}%`) 
+        .limit(1)
 
-      if (existingUsage) {
+      if (existingUsage && existingUsage.length > 0) {
         toast.error('You have already used this code!')
         setIsValidatingCoupon(false)
         return
       }
 
-      // 5. Apply Discount if all checks pass
+      // 4. Success
       const discount = (subTotal * coupon.discount_percentage) / 100
       setDiscountAmount(discount)
       setAppliedCoupon(coupon.code)
@@ -115,8 +121,35 @@ export default function CheckoutPage() {
     e.preventDefault()
     setLoading(true)
 
+    const cleanPhone = sanitizePhone(formData.contact)
+
+    // Extra validation for phone length
+    if (cleanPhone.length < 10) {
+        toast.error("Please enter a valid phone number.")
+        setLoading(false)
+        return
+    }
+
     try {
-      // 1. Validation (Stock Check)
+      // SECURITY CHECK
+      if (appliedCoupon) {
+         const { data: existingUsage } = await supabase
+            .from('orders')
+            .select('id')
+            .eq('used_coupon_code', appliedCoupon)
+            .ilike('customer_contact', `%${cleanPhone}%`)
+            .limit(1)
+
+         if (existingUsage && existingUsage.length > 0) {
+            toast.error(`System detected this number has already used the code.`)
+            setDiscountAmount(0)
+            setAppliedCoupon(null)
+            setLoading(false)
+            return 
+         }
+      }
+
+      // Stock Check
       for (const item of cart) {
         const { data: product } = await supabase
           .from('products')
@@ -124,26 +157,24 @@ export default function CheckoutPage() {
           .eq('id', item.id)
           .single()
 
-        if (!product) throw new Error(`Product ${item.name} not found`)
-
-        if (item.quantity > (product.stock || 0)) {
-          toast.error(`Stock changed for ${item.name}. Only ${product.stock} left.`)
+        if (!product || item.quantity > (product.stock || 0)) {
+          toast.error(`Stock issue with ${item.name}.`)
           setLoading(false)
           return
         }
       }
 
-      // 2. Create Order (WITH DISCOUNT INFO & COUPON CODE)
+      // SAVE ORDER (Sanitized Phone)
       const { data: orderData, error: orderError } = await supabase
         .from('orders')
         .insert([
           {
             customer_name: formData.name,
             customer_address: formData.address,
-            customer_contact: formData.contact,
-            total_amount: totalAmount,        // Discounted Price
-            discount_amount: discountAmount,  // Savings
-            used_coupon_code: appliedCoupon,  // <--- SAVE THE CODE USED
+            customer_contact: cleanPhone, // Saved as pure numbers (e.g., 63917...)
+            total_amount: totalAmount,
+            discount_amount: discountAmount,
+            used_coupon_code: appliedCoupon,
             status: 'pending'
           }
         ])
@@ -154,7 +185,7 @@ export default function CheckoutPage() {
       const newOrderId = orderData[0].id
       setOrderId(newOrderId)
 
-      // 3. Save Items
+      // Save Items
       const orderItems = cart.map((item) => ({
         order_id: newOrderId,    
         product_id: item.id,
@@ -162,26 +193,14 @@ export default function CheckoutPage() {
         price_at_purchase: item.price 
       }))
 
-      const { error: itemsError } = await supabase
-        .from('order_items')
-        .insert(orderItems)
-
+      const { error: itemsError } = await supabase.from('order_items').insert(orderItems)
       if (itemsError) throw itemsError
 
-      // 4. Deduct Stocks
+      // Deduct Stocks
       for (const item of cart) {
-        const { data: currentProduct } = await supabase
-          .from('products')
-          .select('stock')
-          .eq('id', item.id)
-          .single()
-        
-        if (currentProduct) {
-          const newStock = currentProduct.stock - item.quantity
-          await supabase
-            .from('products')
-            .update({ stock: Math.max(0, newStock) })
-            .eq('id', item.id)
+        const { data: curr } = await supabase.from('products').select('stock').eq('id', item.id).single()
+        if (curr) {
+          await supabase.from('products').update({ stock: Math.max(0, curr.stock - item.quantity) }).eq('id', item.id)
         }
       }
 
@@ -189,15 +208,27 @@ export default function CheckoutPage() {
       setSuccess(true)
 
     } catch (error) {
-      console.error('Checkout Error:', error)
+      console.error(error)
       toast.error('Failed to place order.')
     } finally {
       setLoading(false)
     }
   }
 
+  // Handle Text Inputs (Name, Address)
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value })
+  }
+
+  // Handle Phone Input specifically (Special handler for library)
+  const handlePhoneChange = (value: string) => {
+    // Kung nagbago ang number habang may coupon, remove coupon
+    if (appliedCoupon) {
+        setAppliedCoupon(null)
+        setDiscountAmount(0)
+        toast.info('Number changed. Coupon removed.')
+    }
+    setFormData({ ...formData, contact: value })
   }
 
   if (!isMounted) return null
@@ -240,29 +271,8 @@ export default function CheckoutPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
         
         {/* LEFT: FORM */}
-        <div>
-          <form onSubmit={handleCheckout} className="space-y-6">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
-              <input required name="name" type="text" placeholder="Juan Dela Cruz" className="w-full border border-gray-300 rounded-lg p-3 outline-none focus:ring-2 focus:ring-black transition" value={formData.name} onChange={handleChange} />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number</label>
-              <input required name="contact" type="tel" placeholder="0917 123 4567" className="w-full border border-gray-300 rounded-lg p-3 outline-none focus:ring-2 focus:ring-black transition" value={formData.contact} onChange={handleChange} />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Complete Address</label>
-              <textarea required name="address" rows={3} placeholder="Unit, Street, Barangay, City" className="w-full border border-gray-300 rounded-lg p-3 outline-none focus:ring-2 focus:ring-black transition resize-none" value={formData.address} onChange={handleChange} />
-            </div>
-
-            <button type="submit" disabled={loading} className="w-full bg-black text-white font-bold py-4 rounded-lg hover:bg-gray-800 disabled:bg-gray-400 disabled:cursor-not-allowed transition flex items-center justify-center gap-2">
-              {loading ? <><Loader2 className="animate-spin" /> Processing...</> : `Place Order (COD) • ₱${totalAmount.toFixed(2)}`}
-            </button>
-          </form>
-        </div>
-
-        {/* RIGHT: SUMMARY */}
-        <div className="bg-gray-50 p-6 rounded-xl h-fit border border-gray-100 sticky top-24">
+        <div className="bg-gray-50 p-6 rounded-xl h-fit border border-gray-100">
+          {/* ... (Same as before) ... */}
           <h2 className="text-lg font-bold text-gray-900 mb-4">Order Summary</h2>
           <div className="space-y-4 max-h-75 overflow-y-auto pr-2">
             {cart.map((item) => (
@@ -291,7 +301,7 @@ export default function CheckoutPage() {
                   className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm uppercase outline-none focus:border-black"
                   value={couponCode}
                   onChange={(e) => setCouponCode(e.target.value)}
-                  disabled={appliedCoupon !== null} // Disable if already applied
+                  disabled={appliedCoupon !== null} 
                 />
                 <button 
                    onClick={handleApplyCoupon}
@@ -307,7 +317,6 @@ export default function CheckoutPage() {
           <div className="border-t border-gray-200 mt-6 pt-4 space-y-2">
              <div className="flex justify-between text-gray-600"><span>Subtotal</span><span>₱{subTotal.toFixed(2)}</span></div>
              
-             {/* SHOW DISCOUNT ROW IF APPLIED */}
              {discountAmount > 0 && (
                <div className="flex justify-between text-green-600 font-medium animate-in fade-in">
                  <span className="flex items-center gap-1"><Tag size={14}/> Discount ({appliedCoupon})</span>
@@ -322,6 +331,34 @@ export default function CheckoutPage() {
                 <span>₱{totalAmount.toFixed(2)}</span>
              </div>
           </div>
+        </div>
+
+        {/* RIGHT: SUMMARY */}
+        <div className="sticky top-24">
+        <form onSubmit={handleCheckout} className="space-y-6">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
+              <input required name="name" type="text" placeholder="Juan Dela Cruz" className="w-full border border-gray-300 rounded-lg p-3 outline-none focus:ring-2 focus:ring-black transition" value={formData.name} onChange={handleChange} />
+            </div>
+            
+            {/* REPLACED WITH NEW PHONE INPUT */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number</label>
+              <PhoneInputCustom 
+                value={formData.contact} 
+                onChange={handlePhoneChange} 
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Complete Address</label>
+              <textarea required name="address" rows={3} placeholder="Unit, Street, Barangay, City" className="w-full border border-gray-300 rounded-lg p-3 outline-none focus:ring-2 focus:ring-black transition resize-none" value={formData.address} onChange={handleChange} />
+            </div>
+
+            <button type="submit" disabled={loading} className="w-full bg-black text-white font-bold py-4 rounded-lg hover:bg-gray-800 disabled:bg-gray-400 disabled:cursor-not-allowed transition flex items-center justify-center gap-2">
+              {loading ? <><Loader2 className="animate-spin" /> Processing...</> : `Place Order (COD) • ₱${totalAmount.toFixed(2)}`}
+            </button>
+          </form>
         </div>
 
       </div>
