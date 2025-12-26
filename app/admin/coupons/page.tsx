@@ -17,11 +17,12 @@ export default function AdminCouponsPage() {
     // Kunin ang data at gawing uppercase ang code (e.g. "welcome10" -> "WELCOME10")
     const code = (formData.get('code') as string).toUpperCase().trim()
     const percentage = Number(formData.get('percentage'))
+    const validUntil = formData.get('validUntil') ? new Date(formData.get('validUntil') as string).toISOString() : null
 
     try {
       const { error } = await supabase
         .from('coupons')
-        .insert([{ code, discount_percentage: percentage }])
+        .insert([{ code, discount_percentage: percentage,valid_until: validUntil }])
 
       if (error) throw error
 
@@ -70,6 +71,16 @@ export default function AdminCouponsPage() {
             placeholder="e.g. 10" 
             className="w-full border p-3 rounded-lg outline-none focus:ring-2 focus:ring-black" 
           />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Expiration Date (Optional)</label>
+          <input 
+            name="validUntil" 
+            type="date" 
+            className="w-full border p-3 rounded-lg outline-none focus:ring-2 focus:ring-black" 
+          />
+          <p className="text-xs text-gray-400 mt-1">Leave empty if no expiration.</p>
         </div>
 
         <button 

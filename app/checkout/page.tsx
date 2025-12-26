@@ -43,12 +43,21 @@ export default function CheckoutPage() {
     }
   }, [isMounted, cart, router, success])
 
-  // --- LOGIC: APPLY COUPON ---
+  // --- LOGIC: APPLY COUPON (STRICT CHECK) ---
   const handleApplyCoupon = async () => {
+    // 1. Basic Input Checks
     if (!couponCode.trim()) return
+
+    // Require Contact Number First (Para may ma-check tayo sa history)
+    if (!formData.contact || formData.contact.trim().length < 10) {
+      toast.warning('Please enter your Phone Number first to apply coupons.')
+      return
+    }
+    
     setIsValidatingCoupon(true)
 
     try {
+      // 2. Fetch Coupon Details
       const { data: coupon, error } = await supabase
         .from('coupons')
         .select('*')
@@ -60,13 +69,39 @@ export default function CheckoutPage() {
         toast.error('Invalid or expired coupon code.')
         setDiscountAmount(0)
         setAppliedCoupon(null)
-      } else {
-        // Calculate Discount
-        const discount = (subTotal * coupon.discount_percentage) / 100
-        setDiscountAmount(discount)
-        setAppliedCoupon(coupon.code)
-        toast.success(`Coupon applied! You saved ₱${discount.toFixed(2)}`)
+        setIsValidatingCoupon(false)
+        return
       }
+
+      // 3. CHECK EXPIRATION (New)
+      // Kung may expiration date at lagpas na sa ngayon...
+      if (coupon.valid_until && new Date() > new Date(coupon.valid_until)) {
+        toast.error('This promo code has expired.')
+        setIsValidatingCoupon(false)
+        return
+      }
+
+      // 4. CHECK ONE-TIME USE (New)
+      // Check kung nagamit na ng phone number na to ang coupon na to
+      const { data: existingUsage } = await supabase
+        .from('orders')
+        .select('id')
+        .eq('customer_contact', formData.contact) // Search by Phone
+        .eq('used_coupon_code', coupon.code)      // Search by Code
+        .maybeSingle() // Returns data if found, null if not
+
+      if (existingUsage) {
+        toast.error('You have already used this code!')
+        setIsValidatingCoupon(false)
+        return
+      }
+
+      // 5. Apply Discount if all checks pass
+      const discount = (subTotal * coupon.discount_percentage) / 100
+      setDiscountAmount(discount)
+      setAppliedCoupon(coupon.code)
+      toast.success(`Coupon applied! You saved ₱${discount.toFixed(2)}`)
+
     } catch (error) {
       console.error(error)
       toast.error('Error checking coupon.')
@@ -98,7 +133,7 @@ export default function CheckoutPage() {
         }
       }
 
-      // 2. Create Order (WITH DISCOUNT INFO)
+      // 2. Create Order (WITH DISCOUNT INFO & COUPON CODE)
       const { data: orderData, error: orderError } = await supabase
         .from('orders')
         .insert([
@@ -106,8 +141,9 @@ export default function CheckoutPage() {
             customer_name: formData.name,
             customer_address: formData.address,
             customer_contact: formData.contact,
-            total_amount: totalAmount, // <--- DISCOUNTED PRICE
-            discount_amount: discountAmount, // <--- RECORD THE SAVINGS
+            total_amount: totalAmount,        // Discounted Price
+            discount_amount: discountAmount,  // Savings
+            used_coupon_code: appliedCoupon,  // <--- SAVE THE CODE USED
             status: 'pending'
           }
         ])
