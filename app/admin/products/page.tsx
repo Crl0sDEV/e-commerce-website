@@ -12,7 +12,6 @@ export default function AdminProductsPage() {
   const [products, setProducts] = useState<Product[]>([])
   const [loading, setLoading] = useState(true)
 
-  // FIX 1 & 2: Wrap fetchProducts in useCallback para stable siya at hindi mag-error sa useEffect
   const fetchProducts = useCallback(async () => {
     try {
       setLoading(true)
@@ -32,13 +31,12 @@ export default function AdminProductsPage() {
     } finally {
       setLoading(false)
     }
-  }, []) // Empty dependency array means hindi ito magbabago
+  }, [])
 
   useEffect(() => {
     fetchProducts()
-  }, [fetchProducts]) // Added fetchProducts to dependency
+  }, [fetchProducts])
 
-  // Delete Function
   const handleDelete = async (id: string) => {
     if (!confirm('Are you sure you want to delete this product?')) return
 
@@ -51,11 +49,10 @@ export default function AdminProductsPage() {
       toast.error('Failed to delete')
     } else {
       toast.success('Product deleted')
-      fetchProducts() // Refresh list
+      fetchProducts()
     }
   }
 
-  // FIX 3: Gamitin ang loading state
   if (loading) {
     return (
       <div className="flex h-[50vh] items-center justify-center">
@@ -95,7 +92,7 @@ export default function AdminProductsPage() {
           </thead>
           <tbody className="divide-y divide-gray-100 text-sm">
             {products.map((product) => {
-              // FIX 4: Handle undefined stock using fallback (|| 0)
+              
               const stock = product.stock || 0 
 
               return (
@@ -108,7 +105,6 @@ export default function AdminProductsPage() {
                   <td className="p-4 font-bold text-gray-900">{product.name}</td>
                   <td className="p-4">₱{product.price}</td>
                   
-                  {/* STOCK COLUMN */}
                   <td className="p-4">
                     <span className={`px-3 py-1 rounded-full text-xs font-bold ${
                       stock === 0 ? 'bg-red-100 text-red-700' :
