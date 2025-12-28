@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, CheckCircle, Loader2, Tag } from 'lucide-react'
 import Link from 'next/link'
-import Image from 'next/image' // Import Image component
+import Image from 'next/image'
 import useCartStore from '@/store/useCartStore'
 import { supabase } from '@/lib/supabaseClient'
 import { toast } from 'sonner'
@@ -172,6 +172,7 @@ export default function CheckoutPage() {
             customer_contact: cleanPhone,
             total_amount: totalAmount,
             discount_amount: discountAmount,
+            subtotal: subTotal,
             used_coupon_code: appliedCoupon,
             payment_method: paymentMethod, 
             payment_ref: paymentMethod === 'GCASH' ? refNumber : null,
@@ -255,78 +256,20 @@ export default function CheckoutPage() {
   }
 
   return (
-    <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+    <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 md:py-10">
       <Link href="/cart" className="inline-flex items-center text-gray-500 hover:text-black mb-6">
         <ArrowLeft size={20} className="mr-2" /> Back to Cart
       </Link>
 
-      <h1 className="text-3xl font-bold text-gray-900 mb-8">Checkout</h1>
+      <h1 className="text-3xl font-bold text-gray-900 mb-6 md:mb-8">Checkout</h1>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-10">
         
-        {/* --- LEFT SIDE: ORDER SUMMARY --- */}
-        <div className="bg-gray-50 p-6 rounded-xl h-fit border border-gray-100 order-2 lg:order-1">
-          <h2 className="text-lg font-bold text-gray-900 mb-4">Order Summary</h2>
-          <div className="space-y-4 max-h-75 overflow-y-auto pr-2">
-            {cart.map((item) => (
-              <div key={item.id} className="flex justify-between items-center text-sm">
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 bg-gray-200 rounded overflow-hidden relative">
-                     <Image src={item.image_url} alt={item.name} fill className="object-cover" sizes="48px" />
-                  </div>
-                  <div>
-                    <p className="font-medium text-gray-900">{item.name}</p>
-                    <p className="text-gray-500">Qty: {item.quantity}</p>
-                  </div>
-                </div>
-                <p className="font-semibold">₱{item.price * item.quantity}</p>
-              </div>
-            ))}
-          </div>
-
-          <div className="mt-6 pt-6 border-t border-gray-200">
-             <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Promo Code</label>
-             <div className="flex gap-2">
-                <input 
-                  type="text" 
-                  placeholder="WELCOME10" 
-                  className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm uppercase outline-none focus:border-black"
-                  value={couponCode}
-                  onChange={(e) => setCouponCode(e.target.value)}
-                  disabled={appliedCoupon !== null} 
-                />
-                <button 
-                   onClick={handleApplyCoupon}
-                   disabled={isValidatingCoupon || appliedCoupon !== null || !couponCode}
-                   className="bg-gray-900 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-gray-700 disabled:opacity-50"
-                >
-                   {appliedCoupon ? 'Applied' : 'Apply'}
-                </button>
-             </div>
-          </div>
-          
-          <div className="border-t border-gray-200 mt-6 pt-4 space-y-2">
-             <div className="flex justify-between text-gray-600"><span>Subtotal</span><span>₱{subTotal.toFixed(2)}</span></div>
-             
-             {discountAmount > 0 && (
-               <div className="flex justify-between text-green-600 font-medium animate-in fade-in">
-                 <span className="flex items-center gap-1"><Tag size={14}/> Discount ({appliedCoupon})</span>
-                 <span>-₱{discountAmount.toFixed(2)}</span>
-               </div>
-             )}
-
-             <div className="flex justify-between text-gray-600"><span>Shipping</span><span className="text-green-600">Free</span></div>
-             
-             <div className="flex justify-between text-xl font-bold text-gray-900 pt-2 border-t border-dashed border-gray-300 mt-2">
-                <span>Total</span>
-                <span>₱{totalAmount.toFixed(2)}</span>
-             </div>
-          </div>
-        </div>
-
-        {/* --- RIGHT SIDE: FORM & PAYMENT --- */}
-        <div className="sticky top-24 order-1 lg:order-2">
+        {/* --- FORM & PAYMENT (LEFT on Desktop, BOTTOM on Mobile) --- */}
+        {/* Mobile: order-2 (Nasa baba) | Desktop: order-1 (Nasa kaliwa) */}
+        <div className="order-2 lg:order-1 h-fit">
             <form onSubmit={handleCheckout} className="space-y-6">
+                {/* Personal Info */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
                   <input required name="name" type="text" placeholder="Juan Dela Cruz" className="w-full border border-gray-300 rounded-lg p-3 outline-none focus:ring-2 focus:ring-black transition" value={formData.name} onChange={handleChange} />
@@ -348,7 +291,7 @@ export default function CheckoutPage() {
                 {/* --- PAYMENT METHOD SECTION --- */}
                 <div className="pt-4 border-t border-gray-100">
                     <label className="block text-sm font-medium text-gray-700 mb-3">Payment Method</label>
-                    <div className="grid grid-cols-2 gap-4 mb-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
                         {/* COD OPTION */}
                         <div 
                             onClick={() => setPaymentMethod('COD')}
@@ -358,12 +301,11 @@ export default function CheckoutPage() {
                             <span className="text-xs text-gray-500">Pay on delivery</span>
                         </div>
 
-                        {/* GCASH OPTION (With Logo) */}
+                        {/* GCASH OPTION */}
                         <div 
                             onClick={() => setPaymentMethod('GCASH')}
                             className={`border rounded-xl p-4 cursor-pointer flex flex-col items-center justify-center transition ${paymentMethod === 'GCASH' ? 'border-blue-500 bg-blue-50 ring-1 ring-blue-500' : 'border-gray-200 hover:border-blue-300 hover:bg-blue-50'}`}
                         >
-                            {/* DITO NATIN NILAGAY YUNG LOGO BOSS */}
                             <div className="relative w-16 h-6 mb-1">
                                 <Image 
                                     src="/gcash-logo.png" 
@@ -383,7 +325,6 @@ export default function CheckoutPage() {
                             <div className="text-center mb-4">
                                 <p className="text-sm text-blue-800 font-medium mb-2">Scan QR to Pay</p>
                                 
-                                {/* DITO NA LALABAS YUNG QR IMAGE MO BOSS */}
                                 <div className="relative w-48 h-48 mx-auto border-2 border-dashed border-blue-200 rounded-lg overflow-hidden bg-white">
                                     <Image 
                                         src="/my-qr.jpg" 
@@ -416,6 +357,70 @@ export default function CheckoutPage() {
                   {loading ? <><Loader2 className="animate-spin" /> Processing...</> : `Place Order (${paymentMethod}) • ₱${totalAmount.toFixed(2)}`}
                 </button>
             </form>
+        </div>
+
+        {/* --- ORDER SUMMARY (RIGHT on Desktop, TOP on Mobile) --- */}
+        {/* Mobile: order-1 (Nasa taas) | Desktop: order-2 (Nasa kanan) */}
+        {/* Added lg:sticky so it stays visible on desktop while scrolling */}
+        <div className="bg-gray-50 p-6 rounded-xl h-fit border border-gray-100 order-1 lg:order-2 lg:sticky lg:top-24">
+          <h2 className="text-lg font-bold text-gray-900 mb-4">Order Summary</h2>
+          <div className="space-y-4 max-h-75 overflow-y-auto pr-2">
+            {cart.map((item) => (
+              <div key={item.id} className="flex justify-between items-center text-sm">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 bg-gray-200 rounded overflow-hidden relative">
+                     <Image src={item.image_url} alt={item.name} fill className="object-cover" sizes="48px" />
+                  </div>
+                  <div>
+                    <p className="font-medium text-gray-900">{item.name}</p>
+                    <p className="text-gray-500">Qty: {item.quantity}</p>
+                  </div>
+                </div>
+                <p className="font-semibold">₱{item.price * item.quantity}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Promo Code */}
+          <div className="mt-6 pt-6 border-t border-gray-200">
+             <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Promo Code</label>
+             <div className="flex gap-2">
+                <input 
+                  type="text" 
+                  placeholder="WELCOME10" 
+                  className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm uppercase outline-none focus:border-black"
+                  value={couponCode}
+                  onChange={(e) => setCouponCode(e.target.value)}
+                  disabled={appliedCoupon !== null} 
+                />
+                <button 
+                   onClick={handleApplyCoupon}
+                   disabled={isValidatingCoupon || appliedCoupon !== null || !couponCode}
+                   className="bg-gray-900 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-gray-700 disabled:opacity-50"
+                >
+                   {appliedCoupon ? 'Applied' : 'Apply'}
+                </button>
+             </div>
+          </div>
+          
+          {/* Totals */}
+          <div className="border-t border-gray-200 mt-6 pt-4 space-y-2">
+             <div className="flex justify-between text-gray-600"><span>Subtotal</span><span>₱{subTotal.toFixed(2)}</span></div>
+             
+             {discountAmount > 0 && (
+               <div className="flex justify-between text-green-600 font-medium animate-in fade-in">
+                 <span className="flex items-center gap-1"><Tag size={14}/> Discount ({appliedCoupon})</span>
+                 <span>-₱{discountAmount.toFixed(2)}</span>
+               </div>
+             )}
+
+             <div className="flex justify-between text-gray-600"><span>Shipping</span><span className="text-green-600">Free</span></div>
+             
+             <div className="flex justify-between text-xl font-bold text-gray-900 pt-2 border-t border-dashed border-gray-300 mt-2">
+                <span>Total</span>
+                <span>₱{totalAmount.toFixed(2)}</span>
+             </div>
+          </div>
         </div>
 
       </div>

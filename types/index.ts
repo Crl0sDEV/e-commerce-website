@@ -32,6 +32,9 @@ export interface Product {
     customer_contact: string;
     total_amount: number;
     status: string;
+    payment_method: string;
+    discount_amount: number;
+    subtotal: number;
     // Override natin to: Sa admin page, kasama na ang items
     order_items: OrderItemWithProduct[]; 
   }
