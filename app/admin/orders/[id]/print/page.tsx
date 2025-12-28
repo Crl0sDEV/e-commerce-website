@@ -25,6 +25,7 @@ type Order = {
   total_amount: number
   discount_amount: number
   status: string
+  payment_method: string
   order_items: OrderItem[]
 }
 
@@ -119,7 +120,7 @@ export default function PrintInvoicePage() {
                 </div>
                 <div className="flex justify-between">
                    <span className="text-gray-600">Payment:</span>
-                   <span className="font-medium">COD</span>
+                   <span className="font-medium">{order.payment_method}</span>
                 </div>
              </div>
           </div>
