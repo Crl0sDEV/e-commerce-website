@@ -4,11 +4,11 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, CheckCircle, Loader2, Tag } from 'lucide-react'
 import Link from 'next/link'
-import Image from 'next/image'
+import Image from 'next/image' // Import Image component
 import useCartStore from '@/store/useCartStore'
 import { supabase } from '@/lib/supabaseClient'
 import { toast } from 'sonner'
-import PhoneInputCustom from '@/components/PhoneInputCustom' // <--- 1. IMPORT THIS
+import PhoneInputCustom from '@/components/PhoneInputCustom'
 
 export default function CheckoutPage() {
   const router = useRouter()
@@ -20,6 +20,10 @@ export default function CheckoutPage() {
   const [orderId, setOrderId] = useState<string | null>(null)
   const [isMounted, setIsMounted] = useState(false)
 
+  // PAYMENT METHOD STATES
+  const [paymentMethod, setPaymentMethod] = useState<'COD' | 'GCASH'>('COD')
+  const [refNumber, setRefNumber] = useState('')
+
   // PROMO CODE STATES
   const [couponCode, setCouponCode] = useState('')
   const [discountAmount, setDiscountAmount] = useState(0)
@@ -29,18 +33,15 @@ export default function CheckoutPage() {
   const [formData, setFormData] = useState({
     name: '',
     address: '',
-    contact: '' // Dito papasok yung +639...
+    contact: '' 
   })
 
   useEffect(() => setIsMounted(true), [])
 
-  // HELPER: Sanitize Phone (Linisin bago i-save sa DB)
-  // Input: "+63 917 123 4567" -> Output: "639171234567" (Numbers only)
   const sanitizePhone = (phone: string) => {
     return phone ? phone.replace(/\D/g, '') : ''
   }
 
-  // 1. COMPUTE TOTALS
   const subTotal = cart.reduce((total, item) => total + (item.price * item.quantity), 0)
   const totalAmount = Math.max(0, subTotal - discountAmount) 
 
@@ -56,7 +57,6 @@ export default function CheckoutPage() {
 
     const cleanPhone = sanitizePhone(formData.contact)
 
-    // Check if valid length (usually 10-12 digits depending on country)
     if (!cleanPhone || cleanPhone.length < 10) {
       toast.warning('Please enter a valid Phone Number first.')
       return
@@ -65,7 +65,6 @@ export default function CheckoutPage() {
     setIsValidatingCoupon(true)
 
     try {
-      // 1. Fetch Coupon
       const { data: coupon, error } = await supabase
         .from('coupons')
         .select('*')
@@ -81,14 +80,12 @@ export default function CheckoutPage() {
         return
       }
 
-      // 2. Expiration Check
       if (coupon.valid_until && new Date() > new Date(coupon.valid_until)) {
         toast.error('This promo code has expired.')
         setIsValidatingCoupon(false)
         return
       }
 
-      // 3. HISTORY CHECK (using clean phone)
       const { data: existingUsage } = await supabase
         .from('orders')
         .select('id')
@@ -102,7 +99,6 @@ export default function CheckoutPage() {
         return
       }
 
-      // 4. Success
       const discount = (subTotal * coupon.discount_percentage) / 100
       setDiscountAmount(discount)
       setAppliedCoupon(coupon.code)
@@ -123,15 +119,19 @@ export default function CheckoutPage() {
 
     const cleanPhone = sanitizePhone(formData.contact)
 
-    // Extra validation for phone length
     if (cleanPhone.length < 10) {
         toast.error("Please enter a valid phone number.")
         setLoading(false)
         return
     }
 
+    if (paymentMethod === 'GCASH' && refNumber.length < 5) {
+        toast.error('Please enter a valid GCash Reference Number.')
+        setLoading(false)
+        return
+    }
+
     try {
-      // SECURITY CHECK
       if (appliedCoupon) {
          const { data: existingUsage } = await supabase
             .from('orders')
@@ -149,7 +149,6 @@ export default function CheckoutPage() {
          }
       }
 
-      // Stock Check
       for (const item of cart) {
         const { data: product } = await supabase
           .from('products')
@@ -164,17 +163,18 @@ export default function CheckoutPage() {
         }
       }
 
-      // SAVE ORDER (Sanitized Phone)
       const { data: orderData, error: orderError } = await supabase
         .from('orders')
         .insert([
           {
             customer_name: formData.name,
             customer_address: formData.address,
-            customer_contact: cleanPhone, // Saved as pure numbers (e.g., 63917...)
+            customer_contact: cleanPhone,
             total_amount: totalAmount,
             discount_amount: discountAmount,
             used_coupon_code: appliedCoupon,
+            payment_method: paymentMethod, 
+            payment_ref: paymentMethod === 'GCASH' ? refNumber : null,
             status: 'pending'
           }
         ])
@@ -185,7 +185,6 @@ export default function CheckoutPage() {
       const newOrderId = orderData[0].id
       setOrderId(newOrderId)
 
-      // Save Items
       const orderItems = cart.map((item) => ({
         order_id: newOrderId,    
         product_id: item.id,
@@ -196,7 +195,6 @@ export default function CheckoutPage() {
       const { error: itemsError } = await supabase.from('order_items').insert(orderItems)
       if (itemsError) throw itemsError
 
-      // Deduct Stocks
       for (const item of cart) {
         const { data: curr } = await supabase.from('products').select('stock').eq('id', item.id).single()
         if (curr) {
@@ -215,14 +213,11 @@ export default function CheckoutPage() {
     }
   }
 
-  // Handle Text Inputs (Name, Address)
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value })
   }
 
-  // Handle Phone Input specifically (Special handler for library)
   const handlePhoneChange = (value: string) => {
-    // Kung nagbago ang number habang may coupon, remove coupon
     if (appliedCoupon) {
         setAppliedCoupon(null)
         setDiscountAmount(0)
@@ -241,7 +236,7 @@ export default function CheckoutPage() {
         </div>
         <h1 className="text-3xl font-bold text-gray-900 mb-2">Order Placed!</h1>
         <p className="text-gray-500 max-w-md mb-6">
-          Thank you, {formData.name}! We have received your order.
+          Thank you, {formData.name}! We have received your order via {paymentMethod}.
         </p>
         {orderId && (
           <div className="bg-gray-50 border border-gray-200 p-4 rounded-xl mb-6 w-full max-w-sm">
@@ -249,7 +244,6 @@ export default function CheckoutPage() {
             <div className="flex items-center justify-center gap-2 bg-white border border-gray-200 p-2 rounded-lg">
                <code className="text-sm sm:text-base font-mono font-bold text-gray-900 select-all break-all">{orderId}</code>
             </div>
-            <p className="text-xs text-gray-400 mt-2">Please copy this ID to track your order.</p>
           </div>
         )}
         <div className="flex flex-col gap-3 w-full max-w-xs">
@@ -270,9 +264,8 @@ export default function CheckoutPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
         
-        {/* LEFT: FORM */}
-        <div className="bg-gray-50 p-6 rounded-xl h-fit border border-gray-100">
-          {/* ... (Same as before) ... */}
+        {/* --- LEFT SIDE: ORDER SUMMARY --- */}
+        <div className="bg-gray-50 p-6 rounded-xl h-fit border border-gray-100 order-2 lg:order-1">
           <h2 className="text-lg font-bold text-gray-900 mb-4">Order Summary</h2>
           <div className="space-y-4 max-h-75 overflow-y-auto pr-2">
             {cart.map((item) => (
@@ -291,7 +284,6 @@ export default function CheckoutPage() {
             ))}
           </div>
 
-          {/* PROMO CODE INPUT */}
           <div className="mt-6 pt-6 border-t border-gray-200">
              <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Promo Code</label>
              <div className="flex gap-2">
@@ -313,7 +305,6 @@ export default function CheckoutPage() {
              </div>
           </div>
           
-          {/* TOTALS COMPUTATION */}
           <div className="border-t border-gray-200 mt-6 pt-4 space-y-2">
              <div className="flex justify-between text-gray-600"><span>Subtotal</span><span>₱{subTotal.toFixed(2)}</span></div>
              
@@ -333,32 +324,98 @@ export default function CheckoutPage() {
           </div>
         </div>
 
-        {/* RIGHT: SUMMARY */}
-        <div className="sticky top-24">
-        <form onSubmit={handleCheckout} className="space-y-6">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
-              <input required name="name" type="text" placeholder="Juan Dela Cruz" className="w-full border border-gray-300 rounded-lg p-3 outline-none focus:ring-2 focus:ring-black transition" value={formData.name} onChange={handleChange} />
-            </div>
-            
-            {/* REPLACED WITH NEW PHONE INPUT */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number</label>
-              <PhoneInputCustom 
-                value={formData.contact} 
-                onChange={handlePhoneChange} 
-              />
-            </div>
+        {/* --- RIGHT SIDE: FORM & PAYMENT --- */}
+        <div className="sticky top-24 order-1 lg:order-2">
+            <form onSubmit={handleCheckout} className="space-y-6">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
+                  <input required name="name" type="text" placeholder="Juan Dela Cruz" className="w-full border border-gray-300 rounded-lg p-3 outline-none focus:ring-2 focus:ring-black transition" value={formData.name} onChange={handleChange} />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number</label>
+                  <PhoneInputCustom 
+                    value={formData.contact} 
+                    onChange={handlePhoneChange} 
+                  />
+                </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Complete Address</label>
-              <textarea required name="address" rows={3} placeholder="Unit, Street, Barangay, City" className="w-full border border-gray-300 rounded-lg p-3 outline-none focus:ring-2 focus:ring-black transition resize-none" value={formData.address} onChange={handleChange} />
-            </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Complete Address</label>
+                  <textarea required name="address" rows={3} placeholder="Unit, Street, Barangay, City" className="w-full border border-gray-300 rounded-lg p-3 outline-none focus:ring-2 focus:ring-black transition resize-none" value={formData.address} onChange={handleChange} />
+                </div>
 
-            <button type="submit" disabled={loading} className="w-full bg-black text-white font-bold py-4 rounded-lg hover:bg-gray-800 disabled:bg-gray-400 disabled:cursor-not-allowed transition flex items-center justify-center gap-2">
-              {loading ? <><Loader2 className="animate-spin" /> Processing...</> : `Place Order (COD) • ₱${totalAmount.toFixed(2)}`}
-            </button>
-          </form>
+                {/* --- PAYMENT METHOD SECTION --- */}
+                <div className="pt-4 border-t border-gray-100">
+                    <label className="block text-sm font-medium text-gray-700 mb-3">Payment Method</label>
+                    <div className="grid grid-cols-2 gap-4 mb-4">
+                        {/* COD OPTION */}
+                        <div 
+                            onClick={() => setPaymentMethod('COD')}
+                            className={`border rounded-xl p-4 cursor-pointer flex flex-col items-center justify-center transition ${paymentMethod === 'COD' ? 'border-black bg-gray-50 ring-1 ring-black' : 'border-gray-200 hover:border-gray-400 hover:bg-gray-50'}`}
+                        >
+                            <span className="font-bold text-gray-900">COD</span>
+                            <span className="text-xs text-gray-500">Pay on delivery</span>
+                        </div>
+
+                        {/* GCASH OPTION (With Logo) */}
+                        <div 
+                            onClick={() => setPaymentMethod('GCASH')}
+                            className={`border rounded-xl p-4 cursor-pointer flex flex-col items-center justify-center transition ${paymentMethod === 'GCASH' ? 'border-blue-500 bg-blue-50 ring-1 ring-blue-500' : 'border-gray-200 hover:border-blue-300 hover:bg-blue-50'}`}
+                        >
+                            {/* DITO NATIN NILAGAY YUNG LOGO BOSS */}
+                            <div className="relative w-16 h-6 mb-1">
+                                <Image 
+                                    src="/gcash-logo.png" 
+                                    alt="GCash" 
+                                    fill 
+                                    className="object-contain"
+                                    sizes="64px"
+                                />
+                            </div>
+                            <span className="text-xs text-gray-500">Scan to pay</span>
+                        </div>
+                    </div>
+
+                    {/* QR Code & Reference Input */}
+                    {paymentMethod === 'GCASH' && (
+                        <div className="bg-blue-50 border border-blue-100 p-4 rounded-xl animate-in fade-in slide-in-from-top-2">
+                            <div className="text-center mb-4">
+                                <p className="text-sm text-blue-800 font-medium mb-2">Scan QR to Pay</p>
+                                
+                                {/* DITO NA LALABAS YUNG QR IMAGE MO BOSS */}
+                                <div className="relative w-48 h-48 mx-auto border-2 border-dashed border-blue-200 rounded-lg overflow-hidden bg-white">
+                                    <Image 
+                                        src="/my-qr.jpg" 
+                                        alt="Scan to Pay" 
+                                        fill 
+                                        className="object-cover"
+                                        sizes="(max-width: 768px) 192px, 192px"
+                                    />
+                                </div>
+                                
+                                <p className="text-xs text-gray-500 mt-2">Total Amount: <span className="font-bold text-lg text-black">₱{totalAmount.toFixed(2)}</span></p>
+                            </div>
+
+                            <div className="bg-white p-3 rounded-lg border border-gray-200">
+                                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1">Reference Number</label>
+                                <input 
+                                    type="text" 
+                                    placeholder="Enter the Ref No. (e.g. 100234...)"
+                                    className="w-full text-sm outline-none font-mono tracking-wider"
+                                    value={refNumber}
+                                    onChange={(e) => setRefNumber(e.target.value)}
+                                    required
+                                />
+                            </div>
+                        </div>
+                    )}
+                </div>
+
+                <button type="submit" disabled={loading} className="w-full bg-black text-white font-bold py-4 rounded-lg hover:bg-gray-800 disabled:bg-gray-400 disabled:cursor-not-allowed transition flex items-center justify-center gap-2">
+                  {loading ? <><Loader2 className="animate-spin" /> Processing...</> : `Place Order (${paymentMethod}) • ₱${totalAmount.toFixed(2)}`}
+                </button>
+            </form>
         </div>
 
       </div>
