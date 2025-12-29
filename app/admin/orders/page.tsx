@@ -2,9 +2,12 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import { Package, ArrowLeft, Printer, Search, Filter, CreditCard, Banknote, Clock, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Package, ArrowLeft, Printer, Search, Filter, CreditCard, Banknote, Clock, ChevronLeft, ChevronRight, Download } from 'lucide-react'
 import { toast } from 'sonner'
 import Link from 'next/link'
+// 👇 NEW IMPORTS
+import ExcelJS from 'exceljs'
+import { saveAs } from 'file-saver'
 
 // CONSTANTS
 const ITEMS_PER_PAGE = 10
@@ -30,7 +33,6 @@ export default function AdminOrdersPage() {
   const [orders, setOrders] = useState<OrderWithItems[]>([])
   const [loading, setLoading] = useState(true)
   
-  // PAGINATION & FILTER STATES
   const [page, setPage] = useState(1)
   const [totalOrders, setTotalOrders] = useState(0)
   const [search, setSearch] = useState('')
@@ -40,11 +42,9 @@ export default function AdminOrdersPage() {
     try {
       setLoading(true)
       
-      // Calculate Pagination Range (e.g., Page 1: 0-9, Page 2: 10-19)
       const from = (page - 1) * ITEMS_PER_PAGE
       const to = from + ITEMS_PER_PAGE - 1
 
-      // 1. Build Query
       let query = supabase
         .from('orders')
         .select(`
@@ -54,20 +54,12 @@ export default function AdminOrdersPage() {
             quantity,
             products (name)
           )
-        `, { count: 'exact' }) // Request total count for pagination logic
+        `, { count: 'exact' })
         .order('created_at', { ascending: false })
-        .range(from, to) // <--- SERVER SIDE PAGINATION
+        .range(from, to)
 
-      // 2. Apply Status Filter
-      if (filterStatus !== 'all') {
-        query = query.eq('status', filterStatus)
-      }
-
-      // 3. Apply Search Filter (Server-side)
-      // Note: Searching by Name OR Contact Number
-      if (search) {
-        query = query.or(`customer_name.ilike.%${search}%,customer_contact.ilike.%${search}%`)
-      }
+      if (filterStatus !== 'all') query = query.eq('status', filterStatus)
+      if (search) query = query.or(`customer_name.ilike.%${search}%,customer_contact.ilike.%${search}%`)
 
       const { data, error, count } = await query
 
@@ -82,39 +74,110 @@ export default function AdminOrdersPage() {
     } finally {
       setLoading(false)
     }
-  }, [page, filterStatus, search]) // Depend on Page, Filter, Search
+  }, [page, filterStatus, search])
 
-  // Debounce Search & Reset Page
   useEffect(() => {
-    const timeoutId = setTimeout(() => {
-        fetchOrders()
-    }, 500)
+    const timeoutId = setTimeout(() => { fetchOrders() }, 500)
     return () => clearTimeout(timeoutId)
   }, [fetchOrders])
 
-  // Reset to Page 1 when Search/Filter changes
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
       setSearch(e.target.value)
-      setPage(1) // Reset to first page
+      setPage(1)
   }
   const handleFilterChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
       setFilterStatus(e.target.value)
-      setPage(1) // Reset to first page
+      setPage(1)
   }
 
-  // Update Status
   const updateStatus = async (orderId: string, newStatus: string) => {
     try {
-      const { error } = await supabase
-        .from('orders')
-        .update({ status: newStatus })
-        .eq('id', orderId)
-
+      const { error } = await supabase.from('orders').update({ status: newStatus }).eq('id', orderId)
       if (error) throw error
       fetchOrders()
       toast.success(`Order updated to ${newStatus}`)
     } catch (error) {
+      console.error('Update failed:', error)
       toast.error('Failed to update status.')
+    }
+  }
+
+  // --- NEW & SECURE: EXPORT TO EXCEL (ExcelJS) ---
+  const exportToExcel = async () => {
+    const toastId = toast.loading("Generating Excel report...")
+
+    try {
+        // 1. Fetch Data
+        let query = supabase
+            .from('orders')
+            .select(`*, order_items (quantity, products (name))`)
+            .order('created_at', { ascending: false })
+
+        if (filterStatus !== 'all') query = query.eq('status', filterStatus)
+        if (search) query = query.or(`customer_name.ilike.%${search}%,customer_contact.ilike.%${search}%`)
+
+        const { data, error } = await query
+        if (error) throw error
+        if (!data || data.length === 0) {
+            toast.dismiss(toastId)
+            toast.error("No data to export")
+            return
+        }
+
+        const allOrders = data as unknown as OrderWithItems[]
+
+        // 2. Create Workbook & Worksheet
+        const workbook = new ExcelJS.Workbook()
+        const worksheet = workbook.addWorksheet('Sales Report')
+
+        // 3. Define Columns (With Widths)
+        worksheet.columns = [
+            { header: 'Order ID', key: 'id', width: 20 },
+            { header: 'Date', key: 'date', width: 15 },
+            { header: 'Customer Name', key: 'name', width: 25 },
+            { header: 'Contact', key: 'contact', width: 15 },
+            { header: 'Address', key: 'address', width: 35 },
+            { header: 'Payment', key: 'payment', width: 10 },
+            { header: 'Ref No.', key: 'ref', width: 15 },
+            { header: 'Status', key: 'status', width: 12 },
+            { header: 'Total', key: 'total', width: 15 },
+            { header: 'Items', key: 'items', width: 40 },
+        ]
+
+        // 4. Style Header (Bold)
+        worksheet.getRow(1).font = { bold: true }
+
+        // 5. Add Data Rows
+        allOrders.forEach(order => {
+            const itemsString = order.order_items.map(i => `${i.quantity}x ${i.products?.name}`).join(", ")
+            
+            worksheet.addRow({
+                id: order.id,
+                date: new Date(order.created_at).toLocaleDateString(),
+                name: order.customer_name,
+                contact: order.customer_contact,
+                address: order.customer_address,
+                payment: order.payment_method || "COD",
+                ref: order.payment_ref || "N/A",
+                status: order.status.toUpperCase(),
+                total: order.total_amount,
+                items: itemsString
+            })
+        })
+
+        // 6. Generate File & Download
+        const buffer = await workbook.xlsx.writeBuffer()
+        const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+        
+        saveAs(blob, `BossStore_Sales_${new Date().toISOString().split('T')[0]}.xlsx`)
+        
+        toast.dismiss(toastId)
+        toast.success(`Exported ${allOrders.length} orders!`)
+
+    } catch (error) {
+        console.error(error)
+        toast.dismiss(toastId)
+        toast.error("Export failed")
     }
   }
 
@@ -129,7 +192,6 @@ export default function AdminOrdersPage() {
     }
   }
 
-  // Pagination Logic
   const totalPages = Math.ceil(totalOrders / ITEMS_PER_PAGE)
 
   return (
@@ -146,9 +208,7 @@ export default function AdminOrdersPage() {
             </h1>
           </div>
 
-          {/* CONTROLS */}
           <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
-             {/* Search */}
              <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
                 <input 
@@ -160,7 +220,6 @@ export default function AdminOrdersPage() {
                 />
              </div>
 
-             {/* Filter */}
              <div className="relative">
                 <Filter className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
                 <select 
@@ -176,6 +235,14 @@ export default function AdminOrdersPage() {
                   <option value="cancelled">Cancelled</option>
                 </select>
              </div>
+
+             <button 
+                onClick={exportToExcel}
+                className="bg-green-600 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 hover:bg-green-700 transition text-sm justify-center whitespace-nowrap"
+                title="Download Secure Excel"
+             >
+                <Download size={18} /> Export Excel
+             </button>
           </div>
       </div>
 
@@ -199,8 +266,6 @@ export default function AdminOrdersPage() {
                 <tr><td colSpan={7} className="p-10 text-center text-gray-500">No orders found.</td></tr>
             ) : orders.map((order) => (
               <tr key={order.id} className="hover:bg-gray-50 transition">
-                
-                {/* ID & Date */}
                 <td className="p-4 align-top w-40">
                   <span className="font-mono text-xs font-bold text-gray-900 block bg-gray-100 px-2 py-0.5 rounded w-fit mb-1">
                     {order.id.slice(0, 8)}...
@@ -210,14 +275,10 @@ export default function AdminOrdersPage() {
                     {new Date(order.created_at).toLocaleDateString()}
                   </div>
                 </td>
-
-                {/* Customer Details */}
                 <td className="p-4 align-top w-48">
                   <p className="font-bold text-gray-900 text-sm">{order.customer_name}</p>
                   <p className="text-xs text-gray-600 mb-1">{order.customer_contact}</p>
                 </td>
-
-                {/* Payment Info */}
                 <td className="p-4 align-top">
                     <div className="flex items-center gap-1 mb-1">
                         {order.payment_method === 'GCASH' 
@@ -234,8 +295,6 @@ export default function AdminOrdersPage() {
                         </div>
                     )}
                 </td>
-
-                {/* Items List */}
                 <td className="p-4 align-top">
                   <div className="space-y-1">
                     {order.order_items?.map((item) => (
@@ -245,20 +304,14 @@ export default function AdminOrdersPage() {
                     ))}
                   </div>
                 </td>
-
-                {/* Total */}
                 <td className="p-4 align-top">
                   <span className="font-bold text-gray-900 text-sm">₱{order.total_amount.toLocaleString()}</span>
                 </td>
-
-                {/* Status Badge */}
                 <td className="p-4 align-top text-center">
                   <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border ${getStatusColor(order.status)}`}>
                     {order.status}
                   </span>
                 </td>
-
-                {/* Actions */}
                 <td className="p-4 align-top text-center">
                   <div className="flex flex-col items-center gap-2">
                       <select
@@ -272,7 +325,6 @@ export default function AdminOrdersPage() {
                         <option value="delivered">Delivered</option>
                         <option value="cancelled">Cancelled</option>
                       </select>
-
                       <Link
                         href={`/admin/orders/${order.id}/print`}
                         target="_blank"
@@ -282,20 +334,17 @@ export default function AdminOrdersPage() {
                       </Link>
                   </div>
                 </td>
-
               </tr>
             ))}
           </tbody>
         </table>
       </div>
 
-      {/* --- PAGINATION CONTROLS --- */}
       {totalOrders > 0 && (
         <div className="flex flex-col sm:flex-row justify-between items-center gap-4 py-4 border-t border-gray-200">
           <p className="text-sm text-gray-500">
              Showing <span className="font-bold text-black">{((page - 1) * ITEMS_PER_PAGE) + 1}</span> to <span className="font-bold text-black">{Math.min(page * ITEMS_PER_PAGE, totalOrders)}</span> of <span className="font-bold text-black">{totalOrders}</span> results
           </p>
-          
           <div className="flex items-center gap-2">
              <button 
                 onClick={() => setPage(p => Math.max(1, p - 1))}
@@ -304,11 +353,7 @@ export default function AdminOrdersPage() {
              >
                 <ChevronLeft size={16} />
              </button>
-             
-             <span className="text-sm font-medium px-2">
-                Page {page} of {totalPages}
-             </span>
-
+             <span className="text-sm font-medium px-2">Page {page} of {totalPages}</span>
              <button 
                 onClick={() => setPage(p => Math.min(totalPages, p + 1))}
                 disabled={page === totalPages || loading}
@@ -319,7 +364,6 @@ export default function AdminOrdersPage() {
           </div>
         </div>
       )}
-
     </main>
   );
 }
