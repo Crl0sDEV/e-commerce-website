@@ -6,6 +6,7 @@ import { ArrowLeft, CheckCircle, Loader2, Tag } from 'lucide-react'
 import Link from 'next/link'
 import Image from 'next/image'
 import useCartStore from '@/store/useCartStore'
+import useUserStore from '@/store/useUserStore'
 import { supabase } from '@/lib/supabaseClient'
 import { toast } from 'sonner'
 import PhoneInputCustom from '@/components/PhoneInputCustom'
@@ -13,6 +14,7 @@ import PhoneInputCustom from '@/components/PhoneInputCustom'
 export default function CheckoutPage() {
   const router = useRouter()
   const { cart, clearCart } = useCartStore()
+  const { user, profile } = useUserStore()
   
   // States
   const [loading, setLoading] = useState(false)
@@ -38,7 +40,31 @@ export default function CheckoutPage() {
 
   useEffect(() => setIsMounted(true), [])
 
+  // --- AUTO-FILL LOGIC WITH PHONE FORMAT FIX ---
+  useEffect(() => {
+    if (profile) {
+        // FIX: Convert '09...' to '+639...' for the input component
+        let formattedPhone = profile.phone_number || ''
+        
+        // Kung nagsisimula sa '0', palitan ng '+63'
+        if (formattedPhone.startsWith('0')) {
+            formattedPhone = '+63' + formattedPhone.substring(1)
+        } 
+        // Kung wala pang '+', dagdagan (just to be safe)
+        else if (formattedPhone && !formattedPhone.startsWith('+')) {
+            formattedPhone = '+' + formattedPhone
+        }
+
+        setFormData({
+            name: profile.full_name || '',
+            address: profile.address || '',
+            contact: formattedPhone // Pass the E.164 format here
+        })
+    }
+  }, [profile])
+
   const sanitizePhone = (phone: string) => {
+    // Keep numbers only for saving/processing
     return phone ? phone.replace(/\D/g, '') : ''
   }
 
@@ -55,7 +81,10 @@ export default function CheckoutPage() {
   const handleApplyCoupon = async () => {
     if (!couponCode.trim()) return
 
-    const cleanPhone = sanitizePhone(formData.contact)
+    // Clean phone before checking DB
+    const cleanPhone = sanitizePhone(formData.contact) 
+    // Note: cleanPhone might be '639...' or '09...' depending on input. 
+    // Usually coupons check basic numbers. Just ensure consistency.
 
     if (!cleanPhone || cleanPhone.length < 10) {
       toast.warning('Please enter a valid Phone Number first.')
@@ -163,16 +192,19 @@ export default function CheckoutPage() {
         }
       }
 
+      // SAVE ORDER
       const { data: orderData, error: orderError } = await supabase
         .from('orders')
         .insert([
           {
+            user_id: user?.id || null,
             customer_name: formData.name,
             customer_address: formData.address,
-            customer_contact: cleanPhone,
+            // Save clean number (e.g., 639... or 09... depending on your preference, sanitize removes +)
+            customer_contact: cleanPhone, 
+            subtotal: subTotal,
             total_amount: totalAmount,
             discount_amount: discountAmount,
-            subtotal: subTotal,
             used_coupon_code: appliedCoupon,
             payment_method: paymentMethod, 
             payment_ref: paymentMethod === 'GCASH' ? refNumber : null,
@@ -248,7 +280,11 @@ export default function CheckoutPage() {
           </div>
         )}
         <div className="flex flex-col gap-3 w-full max-w-xs">
-          <Link href="/track" className="text-blue-600 hover:underline text-sm font-medium">Track your order here</Link>
+          {user ? (
+             <Link href="/my-orders" className="text-blue-600 hover:underline text-sm font-medium">View My Orders</Link>
+          ) : (
+             <Link href="/track" className="text-blue-600 hover:underline text-sm font-medium">Track your order here</Link>
+          )}
           <Link href="/" className="bg-black text-white px-8 py-3 rounded-lg hover:bg-gray-800 transition font-bold">Continue Shopping</Link>
         </div>
       </div>
@@ -265,11 +301,9 @@ export default function CheckoutPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-10">
         
-        {/* --- FORM & PAYMENT (LEFT on Desktop, BOTTOM on Mobile) --- */}
-        {/* Mobile: order-2 (Nasa baba) | Desktop: order-1 (Nasa kaliwa) */}
+        {/* --- FORM & PAYMENT (LEFT) --- */}
         <div className="order-2 lg:order-1 h-fit">
             <form onSubmit={handleCheckout} className="space-y-6">
-                {/* Personal Info */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
                   <input required name="name" type="text" placeholder="Juan Dela Cruz" className="w-full border border-gray-300 rounded-lg p-3 outline-none focus:ring-2 focus:ring-black transition" value={formData.name} onChange={handleChange} />
@@ -359,9 +393,7 @@ export default function CheckoutPage() {
             </form>
         </div>
 
-        {/* --- ORDER SUMMARY (RIGHT on Desktop, TOP on Mobile) --- */}
-        {/* Mobile: order-1 (Nasa taas) | Desktop: order-2 (Nasa kanan) */}
-        {/* Added lg:sticky so it stays visible on desktop while scrolling */}
+        {/* --- ORDER SUMMARY (RIGHT) --- */}
         <div className="bg-gray-50 p-6 rounded-xl h-fit border border-gray-100 order-1 lg:order-2 lg:sticky lg:top-24">
           <h2 className="text-lg font-bold text-gray-900 mb-4">Order Summary</h2>
           <div className="space-y-4 max-h-75 overflow-y-auto pr-2">
@@ -381,7 +413,6 @@ export default function CheckoutPage() {
             ))}
           </div>
 
-          {/* Promo Code */}
           <div className="mt-6 pt-6 border-t border-gray-200">
              <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Promo Code</label>
              <div className="flex gap-2">
@@ -403,7 +434,6 @@ export default function CheckoutPage() {
              </div>
           </div>
           
-          {/* Totals */}
           <div className="border-t border-gray-200 mt-6 pt-4 space-y-2">
              <div className="flex justify-between text-gray-600"><span>Subtotal</span><span>₱{subTotal.toFixed(2)}</span></div>
              

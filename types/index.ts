@@ -38,3 +38,13 @@ export interface Product {
     // Override natin to: Sa admin page, kasama na ang items
     order_items: OrderItemWithProduct[]; 
   }
+
+  
+export interface Profile {
+  id: string
+  full_name: string | null
+  phone_number: string | null
+  address: string | null
+  avatar_url: string | null
+  updated_at: string | null
+}
