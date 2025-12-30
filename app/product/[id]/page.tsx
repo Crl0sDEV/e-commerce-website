@@ -6,6 +6,7 @@ import AddToCartButton from '@/components/AddToCartButton'
 import { notFound } from 'next/navigation'
 import { Metadata } from 'next'
 import ProductCard from '@/components/ProductCard'
+import ProductReviews from '@/components/ProductReviews'
 
 interface Props {
     params: Promise<{ id: string }>
@@ -118,6 +119,8 @@ interface Props {
                <AddToCartButton product={product} />
             </div>
           </div>
+
+          <ProductReviews productId={product.id} />
         </div>
   
         {/* --- NEW: RELATED PRODUCTS SECTION --- */}

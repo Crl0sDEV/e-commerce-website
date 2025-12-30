@@ -97,7 +97,7 @@ export default function Footer() {
           <p>&copy; {new Date().getFullYear()} BossStore. All rights reserved.</p>
           
           {/* Subtle Admin Link */}
-          <Link href="/admin/login" className="hover:text-gray-300 opacity-50 hover:opacity-100 transition text-xs">
+          <Link href="/admin/dashboard" className="hover:text-gray-300 opacity-50 hover:opacity-100 transition text-xs">
             Admin Portal
           </Link>
         </div>

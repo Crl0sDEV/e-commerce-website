@@ -14,19 +14,18 @@ import PhoneInputCustom from '@/components/PhoneInputCustom'
 export default function CheckoutPage() {
   const router = useRouter()
   const { cart, clearCart } = useCartStore()
-  const { user, profile } = useUserStore()
   
-  // States
+  // 1. Rename loading to userLoading para hindi mag-conflict sa form loading
+  const { user, profile, loading: userLoading } = useUserStore() 
+  
   const [loading, setLoading] = useState(false)
   const [success, setSuccess] = useState(false)
   const [orderId, setOrderId] = useState<string | null>(null)
   const [isMounted, setIsMounted] = useState(false)
 
-  // PAYMENT METHOD STATES
+  // Payment & Promo States
   const [paymentMethod, setPaymentMethod] = useState<'COD' | 'GCASH'>('COD')
   const [refNumber, setRefNumber] = useState('')
-
-  // PROMO CODE STATES
   const [couponCode, setCouponCode] = useState('')
   const [discountAmount, setDiscountAmount] = useState(0)
   const [appliedCoupon, setAppliedCoupon] = useState<string | null>(null)
@@ -40,51 +39,67 @@ export default function CheckoutPage() {
 
   useEffect(() => setIsMounted(true), [])
 
-  // --- AUTO-FILL LOGIC WITH PHONE FORMAT FIX ---
+  // --- 2. STRICT AUTH CHECK (The Gatekeeper) ---
+  useEffect(() => {
+    if (!userLoading) {
+        if (!user) {
+            toast.error("Please log in to checkout.")
+            router.push('/login?next=/checkout')
+        }
+    }
+  }, [user, userLoading, router])
+
+  // --- 3. AUTO-FILL LOGIC ---
   useEffect(() => {
     if (profile) {
-        // FIX: Convert '09...' to '+639...' for the input component
         let formattedPhone = profile.phone_number || ''
-        
-        // Kung nagsisimula sa '0', palitan ng '+63'
         if (formattedPhone.startsWith('0')) {
             formattedPhone = '+63' + formattedPhone.substring(1)
-        } 
-        // Kung wala pang '+', dagdagan (just to be safe)
-        else if (formattedPhone && !formattedPhone.startsWith('+')) {
+        } else if (formattedPhone && !formattedPhone.startsWith('+')) {
             formattedPhone = '+' + formattedPhone
         }
 
         setFormData({
             name: profile.full_name || '',
             address: profile.address || '',
-            contact: formattedPhone // Pass the E.164 format here
+            contact: formattedPhone
         })
     }
   }, [profile])
 
-  const sanitizePhone = (phone: string) => {
-    // Keep numbers only for saving/processing
-    return phone ? phone.replace(/\D/g, '') : ''
-  }
-
+  // --- 4. CALCULATIONS (Moved UP) ---
   const subTotal = cart.reduce((total, item) => total + (item.price * item.quantity), 0)
   const totalAmount = Math.max(0, subTotal - discountAmount) 
 
+  // --- 5. CART REDIRECT CHECK (Moved UP - THE FIX) ---
+  // Dapat nandito ito BAGO ang mga return statements
   useEffect(() => {
     if (isMounted && cart.length === 0 && !success) {
       router.push('/cart')
     }
   }, [isMounted, cart, router, success])
 
+  const sanitizePhone = (phone: string) => {
+    return phone ? phone.replace(/\D/g, '') : ''
+  }
+
+  // --- 6. PREVENT FLASH / LOADING STATE ---
+  // Ngayon pwede na mag-return dito kasi tapos na lahat ng Hooks sa taas
+  if (userLoading) {
+      return (
+          <div className="min-h-screen flex items-center justify-center">
+              <Loader2 className="animate-spin" />
+          </div>
+      )
+  }
+
+  if (!isMounted) return null
+
   // --- LOGIC: APPLY COUPON ---
   const handleApplyCoupon = async () => {
     if (!couponCode.trim()) return
 
-    // Clean phone before checking DB
     const cleanPhone = sanitizePhone(formData.contact) 
-    // Note: cleanPhone might be '639...' or '09...' depending on input. 
-    // Usually coupons check basic numbers. Just ensure consistency.
 
     if (!cleanPhone || cleanPhone.length < 10) {
       toast.warning('Please enter a valid Phone Number first.')
@@ -200,7 +215,6 @@ export default function CheckoutPage() {
             user_id: user?.id || null,
             customer_name: formData.name,
             customer_address: formData.address,
-            // Save clean number (e.g., 639... or 09... depending on your preference, sanitize removes +)
             customer_contact: cleanPhone, 
             subtotal: subTotal,
             total_amount: totalAmount,
@@ -258,8 +272,6 @@ export default function CheckoutPage() {
     }
     setFormData({ ...formData, contact: value })
   }
-
-  if (!isMounted) return null
 
   if (success) {
     return (
